@@ -32,6 +32,19 @@ python3 -m http.server
 
 Then open `http://localhost:8000` in your browser.
 
+## Custom Build JS
+
+If you want to regenerate a custom soundfont from local audio files, use the helper in `build_custom/`.
+
+```bash
+cd build_custom
+node build-soundfont.js
+```
+
+That script reads the samples in `build_custom/sounds/` and writes `build_custom/cat-mp3.js`.
+
+To use the generated soundfont in Mido, copy the output file into `sounds/` so the app can load it like the other built-in instruments.
+
 ## Keyboard Shortcuts
 
 | Key | Action |
@@ -65,6 +78,10 @@ Then open `http://localhost:8000` in your browser.
 ```
 index.html                  # Main app (UI + sequencer logic)
 readme.md                   # Project overview
+build_custom/               # Helper script and source samples for generating a custom soundfont
+  build-soundfont.js        # Node script that generates cat-mp3.js from local audio files
+  cat-mp3.js                # Generated custom soundfont file
+  sounds/                   # Source samples used by the build script
 sounds/                     # Soundfont scripts
   acoustic_grand_piano-mp3.js # Soundfont: Grand Piano
   banjo-mp3.js                # Soundfont: Banjo
