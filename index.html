@@ -137,6 +137,7 @@
                 height: var(--grid-key-height);
                 border-radius: 18px;
                 transition: transform 90ms ease;
+                touch-action: none;
             }
 
             .grid-key.is-pressed {
@@ -974,6 +975,9 @@
             const voices = [];
             let ctx = null;
             let knobDrag = null;
+            let gridDrag = null;
+            let suppressGridClick = false;
+            let suppressGridClickTimer = null;
 
             let grid = Array.from({
                 length: TRACKS
@@ -1022,6 +1026,102 @@
                 element.addEventListener("pointercancel", () => {
                     element.classList.remove("is-pressed");
                 });
+            }
+
+            function setCellOn(track, step, note = NOTES[selectedNote]) {
+                const cell = grid[track][step];
+                cell.on = true;
+                cell.note = note;
+            }
+
+            function getGridCellFromPoint(clientX, clientY) {
+                const element = document.elementFromPoint(clientX, clientY);
+                const button = element && element.closest ? element.closest(".grid-key") : null;
+                if (! button || ! gridArea.contains(button)) 
+                    return null;
+                
+                const track = Number(button.dataset.track);
+                const step = Number(button.dataset.step);
+                if (Number.isNaN(track) || Number.isNaN(step)) 
+                    return null;
+                
+                return {
+                    button,
+                    track,
+                    step
+                };
+            }
+
+            function fillDraggedCell(track, step) {
+                setCellOn(track, step);
+                return true;
+            }
+
+            function suppressNextGridClick() {
+                suppressGridClick = true;
+                if (suppressGridClickTimer) {
+                    clearTimeout(suppressGridClickTimer);
+                    suppressGridClickTimer = null;
+                }
+            }
+
+            function releaseGridClickBlock() {
+                if (suppressGridClickTimer) {
+                    clearTimeout(suppressGridClickTimer);
+                }
+                suppressGridClickTimer = setTimeout(() => {
+                    suppressGridClick = false;
+                    suppressGridClickTimer = null;
+                }, 0);
+            }
+
+            function endGridDrag(pointerId) {
+                if (! gridDrag || gridDrag.pointerId !== pointerId) 
+                    return;
+                
+                const wasDragging = gridDrag.dragging;
+                const startTrack = gridDrag.startTrack;
+                const startStep = gridDrag.startStep;
+                const startButton = cellEls[startTrack][startStep];
+                try {
+                    startButton.releasePointerCapture(pointerId);
+                } catch (error) { // Ignore if capture was already released.
+                }
+                if (! wasDragging) {
+                    toggleCell(startTrack, startStep);
+                } else {
+                    releaseGridClickBlock();
+                }
+                gridDrag = null;
+            }
+
+            function handleGridDragMove(event) {
+                if (! gridDrag || gridDrag.pointerId !== event.pointerId) 
+                    return;
+                
+                event.preventDefault();
+                const deltaX = event.clientX - gridDrag.startX;
+                const deltaY = event.clientY - gridDrag.startY;
+                if (! gridDrag.dragging && Math.hypot(deltaX, deltaY) < 8) 
+                    return;
+                
+                if (! gridDrag.dragging) {
+                    gridDrag.dragging = true;
+                    fillDraggedCell(gridDrag.startTrack, gridDrag.startStep);
+                    render();
+                }
+                const hit = getGridCellFromPoint(event.clientX, event.clientY);
+                if (! hit) 
+                    return;
+                
+                if (hit.track === gridDrag.lastTrack && hit.step === gridDrag.lastStep) 
+                    return;
+                
+                gridDrag.lastTrack = hit.track;
+                gridDrag.lastStep = hit.step;
+                fillDraggedCell(hit.track, hit.step);
+                render();
+                
             }
 
             function openHelp() {
@@ -1415,6 +1515,8 @@
                         const button = document.createElement("button");
                         button.type = "button";
                         button.className = "grid-key";
+                        button.dataset.track = String(track);
+                        button.dataset.step = String(step);
                         button.setAttribute(
                             "aria-label",
                             `Track ${
@@ -1434,7 +1536,47 @@
                         button.appendChild(overlay);
                         button.appendChild(label);
                         bindPressAnimation(button);
+                        button.addEventListener("pointerdown", (event) => {
+                            if (event.pointerType === "mouse") 
+                                return;
+                            
+                            event.preventDefault();
+                            button.setPointerCapture(event.pointerId);
+                            suppressNextGridClick();
+                            gridDrag = {
+                                pointerId: event.pointerId,
+                                startX: event.clientX,
+                                startY: event.clientY,
+                                startTrack: track,
+                                startStep: step,
+                                lastTrack: track,
+                                lastStep: step,
+                                dragging: false
+                            };
+                        });
+                        button.addEventListener("pointermove", handleGridDragMove);
+                        button.addEventListener("pointerup", (event) => {
+                            if (! gridDrag || gridDrag.pointerId !== event.pointerId) 
+                                return;
+                            
+                            endGridDrag(event.pointerId);
+                        });
+                        button.addEventListener("pointercancel", (event) => {
+                            if (! gridDrag || gridDrag.pointerId !== event.pointerId) 
+                                return;
+                            
+                            try {
+                                button.releasePointerCapture(event.pointerId);
+                            } catch (error) { // Ignore if capture was already released.
+                            }
+                            gridDrag = null;
+                            releaseGridClickBlock();
+                        });
                         button.addEventListener("click", () => {
+                            if (suppressGridClick) {
+                                suppressGridClick = false;
+                                return;
+                            }
                             cursorTrack = track;
                             cursorStep = step;
                             toggleCell(track, step);
@@ -1571,16 +1713,14 @@
 
             function fillColumn(step) {
                 for (let track = 0; track < TRACKS; track += 1) {
-                    grid[track][step].on = true;
-                    grid[track][step].note = NOTES[selectedNote];
+                    setCellOn(track, step);
                 }
                 render();
             }
 
             function fillRow(track) {
                 for (let step = 0; step < STEPS; step += 1) {
-                    grid[track][step].on = true;
-                    grid[track][step].note = NOTES[selectedNote];
+                    setCellOn(track, step);
                 }
                 render();
             }
@@ -1818,8 +1958,7 @@
 
                 if (key === "Enter") {
                     event.preventDefault();
-                    grid[cursorTrack][cursorStep].on = true;
-                    grid[cursorTrack][cursorStep].note = NOTES[selectedNote];
+                    setCellOn(cursorTrack, cursorStep);
                     render();
                     return;
                 }
@@ -1906,8 +2045,7 @@
                     previewCell();
                 
                 if (pressed(0)) {
-                    grid[cursorTrack][cursorStep].on = true;
-                    grid[cursorTrack][cursorStep].note = NOTES[selectedNote];
+                    setCellOn(cursorTrack, cursorStep);
                     render();
                 }
                 if (pressed(1)) 
