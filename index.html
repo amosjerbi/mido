@@ -756,9 +756,10 @@
             }
         </style>
         <script src="sounds/ocarina-mp3.js"></script>
-        <script src="sounds/synth_bass_1-mp3.js"></script>
         <script src="sounds/vibraphone-mp3.js"></script>
         <script src="sounds/synth_drum-mp3.js"></script>
+        <script src="sounds/acoustic_guitar_nylon-mp3.js"></script>
+        <script src="sounds/xylophone-mp3.js"></script>
         <script src="sounds/steel_drums-mp3.js"></script>
         <script src="sounds/music_box-mp3.js"></script>
         <script src="sounds/acoustic_grand_piano-mp3.js"></script>
@@ -952,16 +953,20 @@
                     font: "ocarina"
                 },
                 {
-                    key: "synth_bass_1",
-                    label: "Synth Bass",
-                    file: "sounds/synth_bass_1-mp3.js",
-                    font: "synth_bass_1"
-                },
-                {
                     key: "vibraphone",
                     label: "Vibraphone",
                     file: "sounds/vibraphone-mp3.js",
                     font: "vibraphone"
+                }, {
+                    key: "acoustic_guitar_nylon",
+                    label: "Nylon Guitar",
+                    file: "sounds/acoustic_guitar_nylon-mp3.js",
+                    font: "acoustic_guitar_nylon"
+                }, {
+                    key: "xylophone",
+                    label: "Xylophone",
+                    file: "sounds/xylophone-mp3.js",
+                    font: "xylophone"
                 }, {
                     key: "synth_drum",
                     label: "Synth Drum",
@@ -993,12 +998,13 @@
             const CUSTOM_INSTRUMENT_LABEL = "Custom";
             const AVAILABLE_INSTRUMENT_FILES = new Set([
                 "sounds/acoustic_grand_piano-mp3.js",
+                "sounds/acoustic_guitar_nylon-mp3.js",
                 "sounds/banjo-mp3.js",
                 "sounds/music_box-mp3.js",
                 "sounds/ocarina-mp3.js",
                 "sounds/synth_drum-mp3.js",
                 "sounds/steel_drums-mp3.js",
-                "sounds/synth_bass_1-mp3.js",
+                "sounds/xylophone-mp3.js",
                 "sounds/vibraphone-mp3.js",
             ]);
             const AVAILABLE_INSTRUMENTS = INSTRUMENTS.filter((item) => !item.file || AVAILABLE_INSTRUMENT_FILES.has(item.file));
