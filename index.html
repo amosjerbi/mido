@@ -86,6 +86,47 @@
                 border: 0;
             }
 
+            .channel-bar {
+                position: absolute;
+                left: 20px;
+                top: -2px;
+                width: 318px;
+                display: grid;
+                grid-template-columns: repeat(5, minmax(0, 1fr));
+                gap: 6px;
+                z-index: 5;
+            }
+
+            .channel-pill {
+                width: 100%;
+                height: 36px;
+                border: 2px solid #191d21;
+                border-radius: 999px;
+                background: #ffffff;
+                color: #060708;
+                font-family: "Jost", "Avenir Next", "Segoe UI", sans-serif;
+                font-size: 13px;
+                font-weight: 700;
+                letter-spacing: 0.08em;
+                text-transform: uppercase;
+                cursor: pointer;
+                box-shadow: 0 4px 0 #000000;
+                transition: transform 90ms ease, background 120ms ease, box-shadow 90ms ease, color 120ms ease;
+            }
+
+            .channel-pill.is-active {
+                background: #49c2ad;
+            }
+
+            .channel-pill.is-pressed {
+                transform: translateY(3px);
+                box-shadow: 0 1px 0 #000000;
+            }
+
+            .channel-pill.is-armed {
+                box-shadow: 0 0 0 2px rgba(95, 158, 249, 0.45), 0 4px 0 #000000;
+            }
+
             .key-grid {
                 position: absolute;
                 left: var(--grid-area-left);
@@ -741,6 +782,7 @@
                 <circle cx="88" cy="463" r="2" fill="black"/>
                 <circle cx="94" cy="463" r="2" fill="black"/>
             </svg>
+            <div id="channelBar" class="channel-bar" aria-label="Channel selection"></div>
             <div id="gridArea" class="key-grid" aria-label="Sequencer grid"></div>
             <div id="noteBar" class="note-strip" aria-label="Note selection"></div>
 
@@ -789,8 +831,8 @@
                 </g>
             </svg>
             <button id="playQuick" class="play-hit" type="button" aria-label="Play or pause"></button>
-            <button id="clearQuick" class="shuffle-hit" type="button" aria-label="Clear all steps"></button>
-            <button id="randomQuick" class="clear-hit" type="button" aria-label="Shuffle notes"></button>
+            <button id="clearQuick" class="shuffle-hit" type="button" aria-label="Clear current layer"></button>
+            <button id="randomQuick" class="clear-hit" type="button" aria-label="Shuffle current layer"></button>
             <button id="bpmKnob" class="knob-hit" type="button" aria-label="Tempo slider" aria-valuemin="40" aria-valuemax="300" aria-valuenow="160"></button>
 
             <label class="visually-hidden" for="instrumentSelect">Oscillator</label>
@@ -818,6 +860,10 @@
                         <span>Play or pause</span>
                     </li>
                     <li class="help-item">
+                        <span class="help-key">Pills</span>
+                        <span>Switch layers or play them all together</span>
+                    </li>
+                    <li class="help-item">
                         <span class="help-key">Arrows</span>
                         <span>Move the cursor</span>
                     </li>
@@ -831,7 +877,7 @@
                     </li>
                     <li class="help-item">
                         <span class="help-key">R</span>
-                        <span>Randomize the whole board</span>
+                        <span>Randomize the current layer</span>
                     </li>
                     <li class="help-item">
                         <span class="help-key">F</span>
@@ -843,7 +889,7 @@
                     </li>
                     <li class="help-item">
                         <span class="help-key">C</span>
-                        <span>Clear all steps</span>
+                        <span>Clear the current layer</span>
                     </li>
                     <li class="help-item">
                         <span class="help-key">Z / X</span>
@@ -890,6 +936,7 @@
             const BPM_TRACK_HEIGHT = 160;
             const BPM_HANDLER_HEIGHT = 29;
             const BPM_HANDLER_TRAVEL = BPM_TRACK_HEIGHT - BPM_HANDLER_HEIGHT;
+            const CHANNEL_COUNT = 4;
 
             const INSTRUMENTS = [
                 {
@@ -984,16 +1031,32 @@
             let gridDrag = null;
             let suppressGridClick = false;
             let suppressGridClickTimer = null;
+            let activeChannel = 0;
+            let allChannelsMode = false;
 
-            let grid = Array.from({
-                length: TRACKS
-            }, () => Array.from({
-                length: STEPS
-            }, () => ({on: false, note: DEFAULT_OFF_NOTE})));
+            function createEmptyGrid() {
+                return Array.from({
+                    length: TRACKS
+                }, () => Array.from({
+                    length: STEPS
+                }, () => ({on: false, note: DEFAULT_OFF_NOTE})));
+            }
+
+            let layers = Array.from({
+                length: CHANNEL_COUNT
+            }, () => createEmptyGrid());
+            let layerInstruments = Array.from({
+                length: CHANNEL_COUNT
+            }, () => selectedInstrument);
+            let layerSelectedNotes = Array.from({
+                length: CHANNEL_COUNT
+            }, () => selectedNote);
+            let grid = layers[activeChannel];
             let muted = Array.from({
                 length: TRACKS
             }, () => false);
 
+            const channelBar = document.getElementById("channelBar");
             const gridArea = document.getElementById("gridArea");
             const noteBar = document.getElementById("noteBar");
             const playQuick = document.getElementById("playQuick");
@@ -1011,6 +1074,7 @@
             const tubeGuidePath = document.getElementById("tubeGuidePath");
             const tubeNotePulse = document.getElementById("tubeNotePulse");
 
+            const channelBtns = [];
             const cellEls = Array.from({
                 length: TRACKS
             }, () => Array(STEPS).fill(null));
@@ -1038,6 +1102,66 @@
                 const cell = grid[track][step];
                 cell.on = true;
                 cell.note = note;
+            }
+
+            function commitActiveLayerInstrument() {
+                if (activeChannel >= 0 && activeChannel < layerInstruments.length) {
+                    layerInstruments[activeChannel] = selectedInstrument;
+                }
+            }
+
+            function commitActiveLayerNote() {
+                if (activeChannel >= 0 && activeChannel < layerSelectedNotes.length) {
+                    layerSelectedNotes[activeChannel] = selectedNote;
+                }
+            }
+
+            function commitActiveLayerState() {
+                commitActiveLayerInstrument();
+                commitActiveLayerNote();
+            }
+
+            function selectChannel(index) {
+                commitActiveLayerState();
+                activeChannel = index;
+                allChannelsMode = false;
+                grid = layers[activeChannel];
+                selectedInstrument = layerInstruments[activeChannel];
+                selectedNote = layerSelectedNotes[activeChannel];
+                instrumentSelect.value = selectedInstrument;
+                renderStatus();
+                render();
+                ensureInstrumentLoaded(selectedInstrument).catch((error) => {
+                    console.warn(error);
+                    selectedInstrument = "oscillator";
+                    instrumentSelect.value = selectedInstrument;
+                    renderStatus();
+                });
+            }
+
+            function selectAllChannels() {
+                commitActiveLayerState();
+                allChannelsMode = true;
+                render();
+            }
+
+            function getMergedCell(track, step) {
+                const activeCells = [];
+                for (let layerIndex = 0; layerIndex < layers.length; layerIndex += 1) {
+                    const cell = layers[layerIndex][track][step];
+                    if (cell.on) {
+                        activeCells.push(cell);
+                    }
+                }
+                if (! activeCells.length) {
+                    return {on: false, note: DEFAULT_OFF_NOTE};
+                }
+                const firstNote = activeCells[0].note;
+                const uniform = activeCells.every((cell) => cell.note === firstNote);
+                return {
+                    on: true,
+                    note: uniform ? firstNote : "+"
+                };
             }
 
             function getGridCellFromPoint(clientX, clientY) {
@@ -1238,11 +1362,13 @@
                 return note === "C5" ? "C5" : `${note}4`;
             }
 
-            function getInstrumentSource(note) {
-                const meta = getInstrumentMeta(selectedInstrument);
+            function getInstrumentSource(note, instrumentKey = selectedInstrument) {
+                const meta = getInstrumentMeta(instrumentKey);
                 const loadedFont = meta.font && window.MIDI && MIDI.Soundfont && MIDI.Soundfont[meta.font];
-                const soundfont = activeInstrumentKey === selectedInstrument ? (activeSoundfont || loadedFont) : loadedFont;
-                if (selectedInstrument === "oscillator" || ! soundfont) 
+                const soundfont = meta.key === CUSTOM_INSTRUMENT_KEY
+                    ? ((window.MIDI && MIDI.Soundfont && MIDI.Soundfont[meta.font]) || activeSoundfont || loadedFont)
+                    : loadedFont;
+                if (instrumentKey === "oscillator" || ! soundfont) 
                     return null;
                 
                 return soundfont[getSampleNote(note)] || soundfont[note] || null;
@@ -1491,12 +1617,12 @@
                 });
             }
 
-            function playNote(note, trackIdx, duration = 0.12) {
+            function playNote(note, trackIdx, duration = 0.12, instrumentKey = selectedInstrument) {
                 if (muted[trackIdx]) 
                     return;
                 
                 triggerTubePulse();
-                const source = getInstrumentSource(note);
+                const source = getInstrumentSource(note, instrumentKey);
                 if (source) {
                     const audio = new Audio(source);
                     audio.volume = 0.6;
@@ -1619,7 +1745,7 @@
                         const button = cellEls[track][step];
                         const overlay = button.querySelector(".grid-key-overlay");
                         const label = button.querySelector(".grid-key-label");
-                        const cell = grid[track][step];
+                        const cell = allChannelsMode ? getMergedCell(track, step) : grid[track][step];
                         button.classList.toggle("on", cell.on);
                         button.classList.toggle("playing", playing && step === playStep);
                         button.classList.toggle("button-is-playing", playing && step === playStep && cell.on);
@@ -1639,6 +1765,30 @@
                 });
             }
 
+            function buildChannelBar() {
+                const labels = ["1", "2", "3", "4", "ALL"];
+                labels.forEach((labelText, index) => {
+                    const button = document.createElement("button");
+                    button.type = "button";
+                    button.className = "channel-pill";
+                    button.textContent = labelText;
+                    button.setAttribute(
+                        "aria-label",
+                        index === CHANNEL_COUNT ? "Show all channels" : `Show channel ${index + 1}`
+                    );
+                    bindPressAnimation(button);
+                    button.addEventListener("click", () => {
+                        if (index === CHANNEL_COUNT) {
+                            selectAllChannels();
+                            return;
+                        }
+                        selectChannel(index);
+                    });
+                    channelBar.appendChild(button);
+                    channelBtns.push(button);
+                });
+            }
+
             function renderStatus() {
                 const norm = (bpm - BPM_MIN) / (BPM_MAX - BPM_MIN);
                 const clamped = Math.max(0, Math.min(1, norm));
@@ -1651,6 +1801,8 @@
                     playing ? "PLAY" : "STOP"
                 }  BPM ${bpm}  NOTE ${
                     NOTES[selectedNote]
+                }  ${
+                    allChannelsMode ? "ALL" : `LAYER ${activeChannel + 1}`
                 }`;
                 instrumentSelect.value = selectedInstrument;
                 playQuick.classList.toggle("is-spinning", playing);
@@ -1658,6 +1810,14 @@
                     playArt.classList.toggle("is-spinning", playing);
                     playArt.classList.toggle("is-playing", playing);
                 }
+                channelBtns.forEach((button, index) => {
+                    const isAllButton = index === CHANNEL_COUNT;
+                    const isActive = isAllButton ? allChannelsMode : ! allChannelsMode && index === activeChannel;
+                    const isArmed = allChannelsMode && index === activeChannel;
+                    button.classList.toggle("is-active", isActive);
+                    button.classList.toggle("is-armed", isArmed);
+                    button.setAttribute("aria-pressed", String(isActive || isArmed));
+                });
                 if (instrumentReadout) {
                     const selectedOption = instrumentSelect.options[instrumentSelect.selectedIndex];
                     instrumentReadout.textContent = selectedOption ? selectedOption.textContent.toUpperCase() : "";
@@ -1683,6 +1843,7 @@
 
             function selectNote(index) {
                 selectedNote = ((index % NOTES.length) + NOTES.length) % NOTES.length;
+                commitActiveLayerNote();
                 renderNotes();
                 renderStatus();
             }
@@ -1694,11 +1855,12 @@
             }
 
             function clearAll() {
-                grid = Array.from({
-                    length: TRACKS
-                }, () => Array.from({
-                    length: STEPS
-                }, () => ({on: false, note: DEFAULT_OFF_NOTE})));
+                for (let track = 0; track < TRACKS; track += 1) {
+                    for (let step = 0; step < STEPS; step += 1) {
+                        grid[track][step].on = false;
+                        grid[track][step].note = DEFAULT_OFF_NOTE;
+                    }
+                }
                 render();
             }
 
@@ -1749,7 +1911,8 @@
                 if (playing) 
                     return;
                 
-                ensureInstrumentLoaded(selectedInstrument).catch((error) => console.warn(error));
+                const instrumentKeys = allChannelsMode ? Array.from(new Set(layerInstruments)) : [selectedInstrument];
+                Promise.all(instrumentKeys.map((key) => ensureInstrumentLoaded(key))).catch((error) => console.warn(error));
                 primeInstrumentAudio();
                 playing = true;
                 playStep = 0;
@@ -1777,10 +1940,15 @@
                 if (! playing) 
                     return;
                 
-                for (let track = 0; track < TRACKS; track += 1) {
-                    const cell = grid[track][playStep];
-                    if (cell.on) {
-                        playNote(cell.note, track);
+                const playbackLayers = allChannelsMode ? layers : [grid];
+                for (let layerIndex = 0; layerIndex < playbackLayers.length; layerIndex += 1) {
+                    const layer = playbackLayers[layerIndex];
+                    const instrumentKey = allChannelsMode ? layerInstruments[layerIndex] : selectedInstrument;
+                    for (let track = 0; track < TRACKS; track += 1) {
+                        const cell = layer[track][playStep];
+                        if (cell.on) {
+                            playNote(cell.note, track, 0.12, instrumentKey);
+                        }
                     }
                 }
                 renderGrid();
@@ -1791,7 +1959,7 @@
             function previewCell() {
                 const cell = grid[cursorTrack][cursorStep];
                 const note = cell.on ? cell.note : NOTES[selectedNote];
-                playNote(note, cursorTrack, 0.18);
+                playNote(note, cursorTrack, 0.18, selectedInstrument);
             }
 
             instrumentSelect.addEventListener("change", async () => {
@@ -1801,6 +1969,7 @@
                 }
 
                 selectedInstrument = instrumentSelect.value;
+                commitActiveLayerInstrument();
                 activeSoundfont = null;
                 activeScript = null;
                 activeInstrumentKey = "oscillator";
@@ -1833,11 +2002,12 @@
                     }
 
                 try {
-                        await loadCustomInstrumentFile(file);
-                        stopPreviewAudio();
-                        renderStatus();
-                        primeInstrumentAudio();
-                    } catch (error) {
+                    await loadCustomInstrumentFile(file);
+                    commitActiveLayerInstrument();
+                    stopPreviewAudio();
+                    renderStatus();
+                    primeInstrumentAudio();
+                } catch (error) {
                         console.warn(error);
                         instrumentSelect.value = selectedInstrument;
                         renderStatus();
@@ -2085,6 +2255,7 @@
             }
 
             buildGrid();
+            buildChannelBar();
             buildNoteButtons();
 
             AVAILABLE_INSTRUMENTS.forEach((instrument) => {
@@ -2098,6 +2269,7 @@
             customOption.textContent = CUSTOM_INSTRUMENT_LABEL;
             instrumentSelect.appendChild(customOption);
 
+            commitActiveLayerState();
             instrumentSelect.value = selectedInstrument;
             render();
             ensureInstrumentLoaded(selectedInstrument).catch(() => {});
