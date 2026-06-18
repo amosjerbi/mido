@@ -40,7 +40,7 @@
 
             html,
             body {
-                height: 100dvh;
+                height: 100 dvh;
                 background: var(--page-bg);
                 font-family: Arial, sans-serif;
                 overflow: hidden;
@@ -86,16 +86,28 @@
                 border: 0;
             }
 
-            .channel-bar {
+            /* .channel-bar {
                 position: absolute;
                 left: 20px;
                 top: 16px;
                 width: 318px;
                 display: grid;
                 grid-template-columns: repeat(5, minmax(0, 1fr));
-                gap: 6px;
+                gap: 2px;
+                z-index: 5;
+            } */
+
+            .channel-bar {
+                position: absolute;
+                left: 354px;
+                top: 321px;
+                width: 50px;
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 9px;
                 z-index: 5;
             }
+
 
             .channel-pill {
                 width: 100%;
@@ -910,1376 +922,1376 @@
 
         <script>
             const TRACKS = 4;
-            const STEPS = 8;
-            const NOTES = [
-                "C",
-                "D",
-                "E",
-                "F",
-                "G",
-                "A",
-                "B",
-                "C5"
-            ];
-            const NOTE_BUTTON_ORDER = [
-                7,
-                6,
-                5,
-                4,
-                3,
-                2,
-                1,
-                0
-            ];
-            const DEFAULT_OFF_NOTE = "C";
-            const BPM_MIN = 40;
-            const BPM_MAX = 300;
-            const BPM_TRACK_HEIGHT = 160;
-            const BPM_HANDLER_HEIGHT = 29;
-            const BPM_HANDLER_TRAVEL = BPM_TRACK_HEIGHT - BPM_HANDLER_HEIGHT;
-            const CHANNEL_COUNT = 4;
-
-            const INSTRUMENTS = [
-                {
-                    key: "oscillator",
-                    label: "Oscillator",
-                    file: null,
-                    font: null
-                },
-                {
-                    key: "ocarina",
-                    label: "Ocarina",
-                    file: "sounds/ocarina-mp3.js",
-                    font: "ocarina"
-                },
-                {
-                    key: "vibraphone",
-                    label: "Vibraphone",
-                    file: "sounds/vibraphone-mp3.js",
-                    font: "vibraphone"
-                }, {
-                    key: "acoustic_guitar_nylon",
-                    label: "Nylon Guitar",
-                    file: "sounds/acoustic_guitar_nylon-mp3.js",
-                    font: "acoustic_guitar_nylon"
-                }, {
-                    key: "xylophone",
-                    label: "Xylophone",
-                    file: "sounds/xylophone-mp3.js",
-                    font: "xylophone"
-                }, {
-                    key: "synth_drum",
-                    label: "Synth Drum",
-                    file: "sounds/synth_drum-mp3.js",
-                    font: "synth_drum"
-                }, {
-                    key: "banjo",
-                    label: "Banjo",
-                    file: "sounds/banjo-mp3.js",
-                    font: "banjo"
-                }, {
-                    key: "steel_drums",
-                    label: "Steel Drums",
-                    file: "sounds/steel_drums-mp3.js",
-                    font: "steel_drums"
-                }, {
-                    key: "music_box",
-                    label: "Music Box",
-                    file: "sounds/music_box-mp3.js",
-                    font: "music_box"
-                }, {
-                    key: "acoustic_grand_piano",
-                    label: "Grand Piano",
-                    file: "sounds/acoustic_grand_piano-mp3.js",
-                    font: "acoustic_grand_piano"
-                }
-            ];
-            const CUSTOM_INSTRUMENT_KEY = "custom";
-            const CUSTOM_INSTRUMENT_LABEL = "Custom";
-            const AVAILABLE_INSTRUMENT_FILES = new Set([
-                "sounds/acoustic_grand_piano-mp3.js",
-                "sounds/acoustic_guitar_nylon-mp3.js",
-                "sounds/banjo-mp3.js",
-                "sounds/music_box-mp3.js",
-                "sounds/ocarina-mp3.js",
-                "sounds/synth_drum-mp3.js",
-                "sounds/steel_drums-mp3.js",
-                "sounds/xylophone-mp3.js",
-                "sounds/vibraphone-mp3.js",
-            ]);
-            const AVAILABLE_INSTRUMENTS = INSTRUMENTS.filter((item) => !item.file || AVAILABLE_INSTRUMENT_FILES.has(item.file));
-            const INSTRUMENT_MAP = Object.fromEntries(AVAILABLE_INSTRUMENTS.map((item) => [item.key, item]));
-            const customInstrumentMeta = {
-                key: CUSTOM_INSTRUMENT_KEY,
-                label: CUSTOM_INSTRUMENT_LABEL,
-                file: null,
-                font: null,
-                sourceName: null,
-                sourceUrl: null
-            };
-
-            let bpm = 76;
-            let playing = false;
-            let playStep = 0;
-            let playTimer = null;
-            let cursorTrack = 0;
-            let cursorStep = 0;
-            let selectedNote = 7;
-            let selectedInstrument = "music_box";
-            let activeSoundfont = null;
-            let activeScript = null;
-            let activeInstrumentKey = "music_box";
-            let instrumentLoading = null;
-            const loadedInstrumentScripts = new Set();
-            const voices = [];
-            let ctx = null;
-            let knobDrag = null;
-            let gridDrag = null;
-            let suppressGridClick = false;
-            let suppressGridClickTimer = null;
-            let activeChannel = 0;
-            let allChannelsMode = false;
-
-            function createEmptyGrid() {
-                return Array.from({
-                    length: TRACKS
-                }, () => Array.from({
-                    length: STEPS
-                }, () => ({on: false, note: DEFAULT_OFF_NOTE})));
-            }
-
-            let layers = Array.from({
-                length: CHANNEL_COUNT
-            }, () => createEmptyGrid());
-            let layerInstruments = Array.from({
-                length: CHANNEL_COUNT
-            }, () => selectedInstrument);
-            let layerSelectedNotes = Array.from({
-                length: CHANNEL_COUNT
-            }, () => selectedNote);
-            let grid = layers[activeChannel];
-            let muted = Array.from({
-                length: TRACKS
-            }, () => false);
-
-            const channelBar = document.getElementById("channelBar");
-            const gridArea = document.getElementById("gridArea");
-            const noteBar = document.getElementById("noteBar");
-            const playQuick = document.getElementById("playQuick");
-            const clearQuick = document.getElementById("clearQuick");
-            const randomQuick = document.getElementById("randomQuick");
-            const bpmKnob = document.getElementById("bpmKnob");
-            const instrumentSelect = document.getElementById("instrumentSelect");
-            const instrumentReadout = document.getElementById("instrumentReadout");
-            const customInstrumentInput = document.getElementById("customInstrumentInput");
-            const statusReadout = document.getElementById("statusReadout");
-            const playArt = document.querySelector(".play-art");
-            const infoQuick = document.getElementById("infoQuick");
-            const helpModal = document.getElementById("helpModal");
-            const helpClose = document.getElementById("helpClose");
-            const tubeGuidePath = document.getElementById("tubeGuidePath");
-            const tubeNotePulse = document.getElementById("tubeNotePulse");
-
-            const channelBtns = [];
-            const cellEls = Array.from({
-                length: TRACKS
-            }, () => Array(STEPS).fill(null));
-            const noteBtns = [];
-
-            function bindPressAnimation(element) {
-                if (! element) 
-                    return;
-                
-                element.addEventListener("pointerdown", () => {
-                    element.classList.add("is-pressed");
-                });
-                element.addEventListener("pointerup", () => {
-                    element.classList.remove("is-pressed");
-                });
-                element.addEventListener("pointerleave", () => {
-                    element.classList.remove("is-pressed");
-                });
-                element.addEventListener("pointercancel", () => {
-                    element.classList.remove("is-pressed");
-                });
-            }
-
-            function setCellOn(track, step, note = NOTES[selectedNote]) {
-                const cell = grid[track][step];
-                cell.on = true;
-                cell.note = note;
-            }
-
-            function commitActiveLayerInstrument() {
-                if (activeChannel >= 0 && activeChannel < layerInstruments.length) {
-                    layerInstruments[activeChannel] = selectedInstrument;
-                }
-            }
-
-            function commitActiveLayerNote() {
-                if (activeChannel >= 0 && activeChannel < layerSelectedNotes.length) {
-                    layerSelectedNotes[activeChannel] = selectedNote;
-                }
-            }
-
-            function commitActiveLayerState() {
-                commitActiveLayerInstrument();
-                commitActiveLayerNote();
-            }
-
-            function selectChannel(index) {
-                commitActiveLayerState();
-                activeChannel = index;
-                allChannelsMode = false;
-                grid = layers[activeChannel];
-                selectedInstrument = layerInstruments[activeChannel];
-                selectedNote = layerSelectedNotes[activeChannel];
-                instrumentSelect.value = selectedInstrument;
-                renderStatus();
-                render();
-                ensureInstrumentLoaded(selectedInstrument).catch((error) => {
-                    console.warn(error);
-                    selectedInstrument = "oscillator";
-                    instrumentSelect.value = selectedInstrument;
-                    renderStatus();
-                });
-            }
-
-            function selectAllChannels() {
-                commitActiveLayerState();
-                allChannelsMode = true;
-                render();
-            }
-
-            function getMergedCell(track, step) {
-                const activeCells = [];
-                for (let layerIndex = 0; layerIndex < layers.length; layerIndex += 1) {
-                    const cell = layers[layerIndex][track][step];
-                    if (cell.on) {
-                        activeCells.push(cell);
-                    }
-                }
-                if (! activeCells.length) {
-                    return {on: false, note: DEFAULT_OFF_NOTE};
-                }
-                const firstNote = activeCells[0].note;
-                const uniform = activeCells.every((cell) => cell.note === firstNote);
-                return {
-                    on: true,
-                    note: uniform ? firstNote : "+"
-                };
-            }
-
-            function getGridCellFromPoint(clientX, clientY) {
-                const element = document.elementFromPoint(clientX, clientY);
-                const button = element && element.closest ? element.closest(".grid-key") : null;
-                if (! button || ! gridArea.contains(button)) 
-                    return null;
-                
-                const track = Number(button.dataset.track);
-                const step = Number(button.dataset.step);
-                if (Number.isNaN(track) || Number.isNaN(step)) 
-                    return null;
-                
-                return {
-                    button,
-                    track,
-                    step
-                };
-            }
-
-            function fillDraggedCell(track, step) {
-                setCellOn(track, step);
-                return true;
-            }
-
-            function suppressNextGridClick() {
-                suppressGridClick = true;
-                if (suppressGridClickTimer) {
-                    clearTimeout(suppressGridClickTimer);
-                    suppressGridClickTimer = null;
-                }
-            }
-
-            function releaseGridClickBlock() {
-                if (suppressGridClickTimer) {
-                    clearTimeout(suppressGridClickTimer);
-                }
-                suppressGridClickTimer = setTimeout(() => {
-                    suppressGridClick = false;
-                    suppressGridClickTimer = null;
-                }, 0);
-            }
-
-            function endGridDrag(pointerId) {
-                if (! gridDrag || gridDrag.pointerId !== pointerId) 
-                    return;
-                
-                const wasDragging = gridDrag.dragging;
-                const startTrack = gridDrag.startTrack;
-                const startStep = gridDrag.startStep;
-                const startButton = cellEls[startTrack][startStep];
-                try {
-                    startButton.releasePointerCapture(pointerId);
-                } catch (error) { // Ignore if capture was already released.
-                }
-                if (! wasDragging) {
-                    toggleCell(startTrack, startStep);
-                } else {
-                    releaseGridClickBlock();
-                }
-                gridDrag = null;
-            }
-
-            function handleGridDragMove(event) {
-                if (! gridDrag || gridDrag.pointerId !== event.pointerId) 
-                    return;
-                
-                event.preventDefault();
-                const deltaX = event.clientX - gridDrag.startX;
-                const deltaY = event.clientY - gridDrag.startY;
-                if (! gridDrag.dragging && Math.hypot(deltaX, deltaY) < 8) 
-                    return;
-                
-                if (! gridDrag.dragging) {
-                    gridDrag.dragging = true;
-                    fillDraggedCell(gridDrag.startTrack, gridDrag.startStep);
-                    render();
-                }
-                const hit = getGridCellFromPoint(event.clientX, event.clientY);
-                if (! hit) 
-                    return;
-                
-                if (hit.track === gridDrag.lastTrack && hit.step === gridDrag.lastStep) 
-                    return;
-                
-                gridDrag.lastTrack = hit.track;
-                gridDrag.lastStep = hit.step;
-                fillDraggedCell(hit.track, hit.step);
-                render();
-                
-            }
-
-            function openHelp() {
-                if (! helpModal) 
-                    return;
-                
-                helpModal.hidden = false;
-            }
-
-            function closeHelp() {
-                if (! helpModal) 
-                    return;
-                
-                helpModal.hidden = true;
-            }
-
-            function triggerTubePulse() {
-                if (! tubeGuidePath || ! tubeNotePulse || ! tubeNotePulse.parentNode) 
-                    return;
-                
-
-                const pathLength = tubeGuidePath.getTotalLength();
-                const bulb = tubeNotePulse.cloneNode(true);
-                bulb.removeAttribute("id");
-                tubeNotePulse.parentNode.appendChild(bulb);
-                bulb.style.opacity = "1";
-
-                const originX = 21.5;
-                const originY = 106;
-                const duration = 900;
-                const startTime = performance.now();
-
-                const animatePulse = (now) => {
-                    const progress = Math.min((now - startTime) / duration, 1);
-                    const point = tubeGuidePath.getPointAtLength(progress * pathLength);
-                    bulb.setAttribute(
-                        "transform",
-                        `translate(${
-                            point.x - originX
-                        }, ${
-                            point.y - originY
-                        })`
-                    );
-
-                    if (progress > 0.8) {
-                        const fadeProgress = (progress - 0.8) / 0.2;
-                        bulb.style.opacity = String(1 - fadeProgress);
-                    }
-
-                    if (progress < 1) {
-                        requestAnimationFrame(animatePulse);
-                    } else if (bulb.parentNode) {
-                        bulb.parentNode.removeChild(bulb);
-                    }
-                };
-
-                requestAnimationFrame(animatePulse);
-            }
-
-            function getCtx() {
-                if (! ctx) 
-                    ctx = new(window.AudioContext || window.webkitAudioContext)();
-                
-                if (ctx.state === "suspended") 
-                    ctx.resume();
-                
-                return ctx;
-            }
-
-            function playBeep(freq, trackIdx, duration = 0.12) {
-                if (muted[trackIdx]) 
-                    return;
-                
-                const ac = getCtx();
-                const osc = ac.createOscillator();
-                const gain = ac.createGain();
-                osc.connect(gain);
-                gain.connect(ac.destination);
-                const waves = ["square", "square", "triangle", "sawtooth"];
-                osc.type = waves[trackIdx] || "square";
-                osc.frequency.value = freq;
-                const now = ac.currentTime;
-                gain.gain.setValueAtTime(0.18, now);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
-                osc.start(now);
-                osc.stop(now + duration + 0.01);
-            }
-
-            const NOTE_FREQS = {
-                C: 261.63,
-                D: 293.66,
-                E: 329.63,
-                F: 349.23,
-                G: 392.0,
-                A: 440.0,
-                B: 493.88,
-                C5: 523.25
-            };
-
-            function getInstrumentMeta(key) {
-                if (key === CUSTOM_INSTRUMENT_KEY) {
-                    return customInstrumentMeta;
-                }
-                return INSTRUMENT_MAP[key] || INSTRUMENT_MAP.oscillator;
-            }
-
-            function getSampleNote(note) {
-                return note === "C5" ? "C5" : `${note}4`;
-            }
-
-            function getInstrumentSource(note, instrumentKey = selectedInstrument) {
-                const meta = getInstrumentMeta(instrumentKey);
-                const loadedFont = meta.font && window.MIDI && MIDI.Soundfont && MIDI.Soundfont[meta.font];
-                const soundfont = meta.key === CUSTOM_INSTRUMENT_KEY
-                    ? ((window.MIDI && MIDI.Soundfont && MIDI.Soundfont[meta.font]) || activeSoundfont || loadedFont)
-                    : loadedFont;
-                if (instrumentKey === "oscillator" || ! soundfont) 
-                    return null;
-                
-                return soundfont[getSampleNote(note)] || soundfont[note] || null;
-            }
-
-            function normalizeSoundfontName(name) {
-                return String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
-            }
-
-            function getSoundfontNameCandidates(fileName) {
-                const baseName = String(fileName || "").replace(/\.[^.]+$/, "");
-                const candidates = [
-                    baseName,
-                    baseName.replace(/[-_]?mp3$/i, ""),
-                    baseName.replace(/[-_]?soundfont$/i, "")
-                ].filter(Boolean);
-                return Array.from(new Set(candidates));
-            }
-
-            function getLoadedSoundfontKeys() {
-                return window.MIDI && MIDI.Soundfont ? Object.keys(MIDI.Soundfont) : [];
-            }
-
-            function detectCustomSoundfontKey(beforeKeys, fileName) {
-                const soundfonts = window.MIDI && MIDI.Soundfont;
-                if (! soundfonts) 
-                    return null;
-                
-                const afterKeys = Object.keys(soundfonts);
-                const beforeSet = new Set(beforeKeys);
-                const addedKeys = afterKeys.filter((key) => ! beforeSet.has(key));
-                const candidates = getSoundfontNameCandidates(fileName).map(normalizeSoundfontName);
-                const exactMatch = afterKeys.find((key) => candidates.includes(normalizeSoundfontName(key)));
-                if (exactMatch) 
-                    return exactMatch;
-                
-                const addedCandidate = addedKeys.find((key) => candidates.includes(normalizeSoundfontName(key)));
-                if (addedCandidate) 
-                    return addedCandidate;
-                
-                const partialMatch = afterKeys.find((key) => candidates.some((candidate) => {
-                    const normalized = normalizeSoundfontName(key);
-                    return normalized.includes(candidate) || candidate.includes(normalized);
-                }));
-                if (partialMatch) 
-                    return partialMatch;
-                
-                return addedKeys[0] || afterKeys[0] || null;
-            }
-
-            function setCustomInstrumentLabel(text) {
-                const option = Array.from(instrumentSelect.options).find((entry) => entry.value === CUSTOM_INSTRUMENT_KEY);
-                if (option) {
-                    option.textContent = text;
-                }
-            }
-
-            function loadCustomInstrumentFile(file) {
-                if (! file) {
-                    return Promise.reject(new Error("No custom instrument file selected"));
-                }
-
-                const fileName = file.name || "custom.js";
-                const objectUrl = URL.createObjectURL(file);
-                const beforeKeys = getLoadedSoundfontKeys();
-                const previousSourceUrl = customInstrumentMeta.sourceUrl;
-                const script = document.createElement("script");
-                script.src = objectUrl;
-                script.async = true;
-                script.dataset.instrumentFile = objectUrl;
-
-                const promise = new Promise((resolve, reject) => {
-                    const cleanup = () => {
-                        script.remove();
-                        try {
-                            URL.revokeObjectURL(objectUrl);
-                        } catch (error) { // Ignore cleanup errors.
-                        }
-                    };
-
-                    script.addEventListener("load", () => {
-                        const soundfontKey = detectCustomSoundfontKey(beforeKeys, fileName);
-                        const soundfont = soundfontKey && window.MIDI && MIDI.Soundfont && MIDI.Soundfont[soundfontKey];
-                        if (! soundfont) {
-                            cleanup();
-                            reject(new Error(`Custom soundfont did not expose a usable MIDI.Soundfont entry for ${fileName}`));
-                            return;
-                        }
-
-                        if (previousSourceUrl && previousSourceUrl !== objectUrl) {
-                            try {
-                                URL.revokeObjectURL(previousSourceUrl);
-                            } catch (error) { // Ignore cleanup errors.
-                            }
-                        }
-                        customInstrumentMeta.file = fileName;
-                        customInstrumentMeta.font = soundfontKey;
-                        customInstrumentMeta.sourceName = fileName;
-                        customInstrumentMeta.sourceUrl = objectUrl;
-                        setCustomInstrumentLabel(`Custom: ${
-                            soundfontKey || fileName.replace(/\.[^.]+$/, "")
-                        }`);
-                        activeSoundfont = soundfont;
-                        activeScript = objectUrl;
-                        activeInstrumentKey = CUSTOM_INSTRUMENT_KEY;
-                        selectedInstrument = CUSTOM_INSTRUMENT_KEY;
-                        instrumentSelect.value = CUSTOM_INSTRUMENT_KEY;
-                        cleanup();
-                        resolve();
-                    }, {once: true});
-
-                script.addEventListener("error", () => {
-                        cleanup();
-                        reject(new Error(`Failed to load custom instrument file ${fileName}`));
-                    }, {once: true});
-                });
-                document.head.appendChild(script);
-                return promise;
-            }
-
-            function promptForCustomInstrument() {
-                const currentValue = selectedInstrument;
-                if (customInstrumentInput) {
-                    customInstrumentInput.value = "";
-                    customInstrumentInput.click();
-                }
-                if (currentValue !== CUSTOM_INSTRUMENT_KEY) {
-                    instrumentSelect.value = currentValue;
-                }
-            }
-
-            function stopPreviewAudio() {
-                while (voices.length) {
-                    const voice = voices.pop();
-                    try {
-                        voice.pause();
-                        voice.currentTime = 0;
-                    } catch (error) { // Ignore playback cleanup errors.
-                    }
-                }
-            }
-
-            function primeInstrumentAudio() {
-                const source = getInstrumentSource("C5");
-                if (! source) 
-                    return;
-                
-                const audio = new Audio(source);
-                audio.volume = 0;
-                audio.play().then(() => {
-                    audio.pause();
-                    audio.currentTime = 0;
-                }).catch(() => {});
-            }
-
-            function ensureInstrumentLoaded(key) {
-                if (key === CUSTOM_INSTRUMENT_KEY) {
-                    if (customInstrumentMeta.font && activeSoundfont && activeInstrumentKey === CUSTOM_INSTRUMENT_KEY) {
-                        return Promise.resolve();
-                    }
-                    if (customInstrumentMeta.font && window.MIDI && MIDI.Soundfont && MIDI.Soundfont[customInstrumentMeta.font]) {
-                        activeSoundfont = MIDI.Soundfont[customInstrumentMeta.font];
-                        activeScript = customInstrumentMeta.sourceUrl;
-                        activeInstrumentKey = CUSTOM_INSTRUMENT_KEY;
-                        return Promise.resolve();
-                    }
-                    return Promise.reject(new Error("No custom soundfont has been loaded"));
-                }
-                const meta = getInstrumentMeta(key);
-                if (! meta.file) {
-                    activeSoundfont = null;
-                    activeScript = null;
-                    activeInstrumentKey = "oscillator";
-                    return Promise.resolve();
-                }
-
-                const loadedFont = window.MIDI && MIDI.Soundfont && MIDI.Soundfont[meta.font];
-                if (loadedFont) {
-                    activeSoundfont = loadedFont;
-                    activeScript = meta.file;
-                    activeInstrumentKey = key;
-                    return Promise.resolve();
-                }
-
-                if (activeScript === meta.file && activeSoundfont) {
-                    return Promise.resolve();
-                }
-
-                if (instrumentLoading && instrumentLoading.key === key) {
-                    return instrumentLoading.promise;
-                }
-
-                const promise = new Promise((resolve, reject) => {
-                    const resolveFont = () => {
-                        const font = window.MIDI && window.MIDI.Soundfont && window.MIDI.Soundfont[meta.font];
-                        if (! font) {
-                            reject(new Error(`Soundfont ${
-                                meta.font
-                            } did not load`));
-                            return;
-                        }
-                        activeSoundfont = font;
-                        activeScript = meta.file;
-                        activeInstrumentKey = key;
-                        resolve();
-                    };
-
-                    if (loadedInstrumentScripts.has(meta.file)) {
-                        resolveFont();
-                        return;
-                    }
-
-                    const existing = document.querySelector(`script[data-instrument-file="${
-                        meta.file
-                    }"]`);
-                    if (existing) {
-                        existing.addEventListener("load", resolveFont, {once: true});
-                        existing.addEventListener("error", () => reject(new Error(`Failed to load ${
-                            meta.file
-                        }`)), {once: true});
-                        return;
-                    }
-
-                    const script = document.createElement("script");
-                    script.src = meta.file;
-                    script.async = true;
-                    script.dataset.instrumentFile = meta.file;
-                    script.addEventListener("load", () => {
-                        loadedInstrumentScripts.add(meta.file);
-                        resolveFont();
-                    }, {once: true});
-                    script.addEventListener("error", () => reject(new Error(`Failed to load ${
-                        meta.file
-                    }`)), {once: true});
-                    document.head.appendChild(script);
-                });
-
-                instrumentLoading = {
-                    key,
-                    promise
-                };
-                return promise. finally(() => {
-                    if (instrumentLoading && instrumentLoading.key === key) {
-                        instrumentLoading = null;
-                    }
-                });
-            }
-
-            function playNote(note, trackIdx, duration = 0.12, instrumentKey = selectedInstrument) {
-                if (muted[trackIdx]) 
-                    return;
-                
-                triggerTubePulse();
-                const source = getInstrumentSource(note, instrumentKey);
-                if (source) {
-                    const audio = new Audio(source);
-                    audio.volume = 0.6;
-                    voices.push(audio);
-                    while (voices.length > 10) {
-                        const stale = voices.shift();
-                        try {
-                            stale.pause();
-                            stale.currentTime = 0;
-                        } catch (error) { // Ignore playback cleanup errors.
-                        }
-                    }
-                    audio.play().catch(() => {});
-                    return;
-                }
-                playBeep(NOTE_FREQS[note] || 261.63, trackIdx, duration);
-            }
-
-            function buildGrid() {
-                for (let track = 0; track < TRACKS; track += 1) {
-                    for (let step = 0; step < STEPS; step += 1) {
-                        const button = document.createElement("button");
-                        button.type = "button";
-                        button.className = "grid-key";
-                        button.dataset.track = String(track);
-                        button.dataset.step = String(step);
-                        button.setAttribute(
-                            "aria-label",
-                            `Track ${
-                                track + 1
-                            }, step ${
-                                step + 1
-                            }`
-                        );
-
-                        const overlay = document.createElement("div");
-                        overlay.className = "grid-key-overlay";
-                        overlay.setAttribute("aria-hidden", "true");
-
-                        const label = document.createElement("span");
-                        label.className = "grid-key-label";
-
-                        button.appendChild(overlay);
-                        button.appendChild(label);
-                        bindPressAnimation(button);
-                        button.addEventListener("pointerdown", (event) => {
-                            if (event.pointerType === "mouse") 
-                                return;
-                            
-                            event.preventDefault();
-                            button.setPointerCapture(event.pointerId);
-                            suppressNextGridClick();
-                            gridDrag = {
-                                pointerId: event.pointerId,
-                                startX: event.clientX,
-                                startY: event.clientY,
-                                startTrack: track,
-                                startStep: step,
-                                lastTrack: track,
-                                lastStep: step,
-                                dragging: false
-                            };
-                        });
-                        button.addEventListener("pointermove", handleGridDragMove);
-                        button.addEventListener("pointerup", (event) => {
-                            if (! gridDrag || gridDrag.pointerId !== event.pointerId) 
-                                return;
-                            
-                            endGridDrag(event.pointerId);
-                        });
-                        button.addEventListener("pointercancel", (event) => {
-                            if (! gridDrag || gridDrag.pointerId !== event.pointerId) 
-                                return;
-                            
-                            try {
-                                button.releasePointerCapture(event.pointerId);
-                            } catch (error) { // Ignore if capture was already released.
-                            }
-                            gridDrag = null;
-                            releaseGridClickBlock();
-                        });
-                        button.addEventListener("click", () => {
-                            if (suppressGridClick) {
-                                suppressGridClick = false;
-                                return;
-                            }
-                            cursorTrack = track;
-                            cursorStep = step;
-                            toggleCell(track, step);
-                        });
-
-                        gridArea.appendChild(button);
-                        cellEls[track][step] = button;
-                    }
-                }
-            }
-
-            function buildNoteButtons() {
-                NOTE_BUTTON_ORDER.forEach((noteIndex, position) => {
-                    const button = document.createElement("button");
-                    button.type = "button";
-                    button.className = "note-key";
-                    button.setAttribute("aria-label", `Select ${
-                        NOTES[noteIndex]
-                    }`);
-                    const label = document.createElement("span");
-                    label.className = "note-key-label";
-                    label.textContent = NOTES[noteIndex];
-                    button.appendChild(label);
-                    bindPressAnimation(button);
-                    button.addEventListener("click", () => selectNote(noteIndex));
-                    noteBar.appendChild(button);
-                    noteBtns.push(button);
-                });
-            }
-
-            function renderGrid() {
-                for (let track = 0; track < TRACKS; track += 1) {
-                    for (let step = 0; step < STEPS; step += 1) {
-                        const button = cellEls[track][step];
-                        const overlay = button.querySelector(".grid-key-overlay");
-                        const label = button.querySelector(".grid-key-label");
-                        const cell = allChannelsMode ? getMergedCell(track, step) : grid[track][step];
-                        button.classList.toggle("on", cell.on);
-                        button.classList.toggle("playing", playing && step === playStep);
-                        button.classList.toggle("button-is-playing", playing && step === playStep && cell.on);
-                        button.classList.toggle("cursor-here", track === cursorTrack && step === cursorStep);
-
-                        if (label) {
-                            label.textContent = cell.on ? cell.note : "";
-                        }
-                    }
-                }
-            }
-
-            function renderNotes() {
-                noteBtns.forEach((button, position) => {
-                    const noteIndex = NOTE_BUTTON_ORDER[position];
-                    button.classList.toggle("selected", noteIndex === selectedNote);
-                });
-            }
-
-            function buildChannelBar() {
-                const labels = ["1", "2", "3", "4", "ALL"];
-                labels.forEach((labelText, index) => {
-                    const button = document.createElement("button");
-                    button.type = "button";
-                    button.className = "channel-pill";
-                    button.textContent = labelText;
-                    button.setAttribute(
-                        "aria-label",
-                        index === CHANNEL_COUNT ? "Show all channels" : `Show channel ${index + 1}`
-                    );
-                    bindPressAnimation(button);
-                    button.addEventListener("click", () => {
-                        if (index === CHANNEL_COUNT) {
-                            selectAllChannels();
-                            return;
-                        }
-                        selectChannel(index);
-                    });
-                    channelBar.appendChild(button);
-                    channelBtns.push(button);
-                });
-            }
-
-            function renderStatus() {
-                const norm = (bpm - BPM_MIN) / (BPM_MAX - BPM_MIN);
-                const clamped = Math.max(0, Math.min(1, norm));
-                const handleOffset = BPM_HANDLER_TRAVEL * (1 - clamped);
-                bpmKnob.style.setProperty("--rpm-handler-offset", `${handleOffset}px`);
-                bpmKnob.style.setProperty("--rpm-fill", String(clamped));
-                bpmKnob.setAttribute("aria-valuenow", String(bpm));
-                bpmKnob.setAttribute("aria-valuetext", `${bpm} beats per minute`);
-                statusReadout.textContent = `${
-                    playing ? "PLAY" : "STOP"
-                }  BPM ${bpm}  NOTE ${
-                    NOTES[selectedNote]
-                }  ${
-                    allChannelsMode ? "ALL" : `LAYER ${activeChannel + 1}`
-                }`;
-                instrumentSelect.value = selectedInstrument;
-                playQuick.classList.toggle("is-spinning", playing);
-                if (playArt) {
-                    playArt.classList.toggle("is-spinning", playing);
-                    playArt.classList.toggle("is-playing", playing);
-                }
-                channelBtns.forEach((button, index) => {
-                    const isAllButton = index === CHANNEL_COUNT;
-                    const isActive = isAllButton ? allChannelsMode : ! allChannelsMode && index === activeChannel;
-                    const isArmed = allChannelsMode && index === activeChannel;
-                    button.classList.toggle("is-active", isActive);
-                    button.classList.toggle("is-armed", isArmed);
-                    button.setAttribute("aria-pressed", String(isActive || isArmed));
-                });
-                if (instrumentReadout) {
-                    const selectedOption = instrumentSelect.options[instrumentSelect.selectedIndex];
-                    instrumentReadout.textContent = selectedOption ? selectedOption.textContent.toUpperCase() : "";
-                }
-            }
-
-            function render() {
-                renderGrid();
-                renderNotes();
-                renderStatus();
-            }
-
-            function toggleCell(track, step) {
-                const cell = grid[track][step];
-                if (cell.on) {
-                    cell.on = false;
-                    cell.note = DEFAULT_OFF_NOTE;
-                } else {
-                    cell.on = true;
-                    cell.note = NOTES[selectedNote];
-                } render();
-            }
-
-            function selectNote(index) {
-                selectedNote = ((index % NOTES.length) + NOTES.length) % NOTES.length;
-                commitActiveLayerNote();
-                renderNotes();
-                renderStatus();
-            }
-
-            function clearStep(track, step) {
-                grid[track][step].on = false;
-                grid[track][step].note = DEFAULT_OFF_NOTE;
-                render();
-            }
-
-            function clearAll() {
-                for (let track = 0; track < TRACKS; track += 1) {
-                    for (let step = 0; step < STEPS; step += 1) {
-                        grid[track][step].on = false;
-                        grid[track][step].note = DEFAULT_OFF_NOTE;
-                    }
-                }
-                render();
-            }
-
-            function randomizeBoard() {
-                for (let track = 0; track < TRACKS; track += 1) {
-                    for (let step = 0; step < STEPS; step += 1) {
-                        grid[track][step].on = Math.random() > 0.65;
-                        grid[track][step].note = NOTES[Math.floor(Math.random() * NOTES.length)];
-                    }
-                }
-                render();
-            }
-
-            function setBpm(nextBpm) {
-                bpm = Math.max(BPM_MIN, Math.min(BPM_MAX, Math.round(nextBpm)));
-                renderStatus();
-            }
-
-            function fillColumn(step) {
-                for (let track = 0; track < TRACKS; track += 1) {
-                    setCellOn(track, step);
-                }
-                render();
-            }
-
-            function fillRow(track) {
-                for (let step = 0; step < STEPS; step += 1) {
-                    setCellOn(track, step);
-                }
-                render();
-            }
-
-            function randomize() {
-                for (let track = 0; track < TRACKS; track += 1) {
-                    for (let step = 0; step < STEPS; step += 1) {
-                        grid[track][step].on = Math.random() > 0.5;
-                        grid[track][step].note = NOTES[Math.floor(Math.random() * NOTES.length)];
-                    }
-                }
-                render();
-            }
-
-            function stepInterval() {
-                return(60 / bpm / 4) * 1000;
-            }
-
-            function startPlay() {
-                if (playing) 
-                    return;
-                
-                const instrumentKeys = allChannelsMode ? Array.from(new Set(layerInstruments)) : [selectedInstrument];
-                Promise.all(instrumentKeys.map((key) => ensureInstrumentLoaded(key))).catch((error) => console.warn(error));
-                primeInstrumentAudio();
-                playing = true;
-                playStep = 0;
-                tick();
-                renderStatus();
-            }
-
-            function stopPlay() {
-                playing = false;
-                clearTimeout(playTimer);
-                stopPreviewAudio();
-                renderGrid();
-                renderStatus();
-            }
-
-            function togglePlay() {
-                if (playing) {
-                    stopPlay();
-                } else {
-                    startPlay();
-                }
-            }
-
-            function tick() {
-                if (! playing) 
-                    return;
-                
-                const playbackLayers = allChannelsMode ? layers : [grid];
-                for (let layerIndex = 0; layerIndex < playbackLayers.length; layerIndex += 1) {
-                    const layer = playbackLayers[layerIndex];
-                    const instrumentKey = allChannelsMode ? layerInstruments[layerIndex] : selectedInstrument;
-                    for (let track = 0; track < TRACKS; track += 1) {
-                        const cell = layer[track][playStep];
-                        if (cell.on) {
-                            playNote(cell.note, track, 0.12, instrumentKey);
-                        }
-                    }
-                }
-                renderGrid();
-                playStep = (playStep + 1) % STEPS;
-                playTimer = setTimeout(tick, stepInterval());
-            }
-
-            function previewCell() {
-                const cell = grid[cursorTrack][cursorStep];
-                const note = cell.on ? cell.note : NOTES[selectedNote];
-                playNote(note, cursorTrack, 0.18, selectedInstrument);
-            }
-
-            instrumentSelect.addEventListener("change", async () => {
-                if (instrumentSelect.value === CUSTOM_INSTRUMENT_KEY) {
-                    promptForCustomInstrument();
-                    return;
-                }
-
-                selectedInstrument = instrumentSelect.value;
-                commitActiveLayerInstrument();
-                activeSoundfont = null;
-                activeScript = null;
-                activeInstrumentKey = "oscillator";
-                stopPreviewAudio();
-                renderStatus();
-
-                try {
-                    await ensureInstrumentLoaded(selectedInstrument);
-                } catch (error) {
-                    console.warn(error);
-                    selectedInstrument = "oscillator";
-                    instrumentSelect.value = selectedInstrument;
-                    activeSoundfont = null;
-                    activeScript = null;
-                    activeInstrumentKey = "oscillator";
-                }
-
-                const meta = getInstrumentMeta(selectedInstrument);
-                activeSoundfont = meta.font ? (window.MIDI && MIDI.Soundfont && MIDI.Soundfont[meta.font]) || null : null;
-                activeInstrumentKey = selectedInstrument;
-                primeInstrumentAudio();
-                renderStatus();
-            });
-
-            if (customInstrumentInput) {
-                customInstrumentInput.addEventListener("change", async () => {
-                    const file = customInstrumentInput.files && customInstrumentInput.files[0];
-                    if (! file) {
-                        return;
-                    }
-
-                try {
-                    await loadCustomInstrumentFile(file);
-                    commitActiveLayerInstrument();
-                    stopPreviewAudio();
-                    renderStatus();
-                    primeInstrumentAudio();
-                } catch (error) {
-                        console.warn(error);
-                        instrumentSelect.value = selectedInstrument;
-                        renderStatus();
-                    }
-                });
-            }
-
-            playQuick.addEventListener("click", togglePlay);
-            clearQuick.addEventListener("click", clearAll);
-            randomQuick.addEventListener("click", randomizeBoard);
-            bindPressAnimation(playQuick);
-            bindPressAnimation(clearQuick);
-            bindPressAnimation(randomQuick);
-            bindPressAnimation(infoQuick);
-
-            if (infoQuick) {
-                infoQuick.addEventListener("click", openHelp);
-            }
-
-            if (helpClose) {
-                helpClose.addEventListener("click", closeHelp);
-            }
-
-            if (helpModal) {
-                helpModal.addEventListener("click", (event) => {
-                    if (event.target === helpModal) 
-                        closeHelp();
-                    
-                });
-            }
-
-            bpmKnob.addEventListener("pointerdown", (event) => {
-                event.preventDefault();
-                bpmKnob.setPointerCapture(event.pointerId);
-                bpmKnob.classList.add("is-pressed", "is-tweaking");
-                knobDrag = {
-                    pointerId: event.pointerId,
-                    startY: event.clientY,
-                    startBpm: bpm
-                };
-            });
-
-            bpmKnob.addEventListener("pointermove", (event) => {
-                if (! knobDrag || knobDrag.pointerId !== event.pointerId) 
-                    return;
-                
-                event.preventDefault();
-                const delta = knobDrag.startY - event.clientY;
-                setBpm(knobDrag.startBpm + (delta * 0.9));
-            });
-
-            bpmKnob.addEventListener("pointerup", (event) => {
-                if (! knobDrag || knobDrag.pointerId !== event.pointerId) 
-                    return;
-                
-                try {
-                    bpmKnob.releasePointerCapture(event.pointerId);
-                } catch (error) { // Ignore if capture was already released.
-                }bpmKnob.classList.remove("is-pressed", "is-tweaking");
-                knobDrag = null;
-            });
-
-            bpmKnob.addEventListener("pointercancel", () => {
-                try {
-                    if (knobDrag) 
-                        bpmKnob.releasePointerCapture(knobDrag.pointerId);
-                    
-                } catch (error) { // Ignore if capture was already released.
-                }bpmKnob.classList.remove("is-pressed", "is-tweaking");
-                knobDrag = null;
-            });
-
-            bpmKnob.addEventListener("wheel", (event) => {
-                event.preventDefault();
-                setBpm(bpm + (event.deltaY < 0 ? 2 : -2));
-            }, {passive: false});
-
-            document.addEventListener("keydown", (event) => {
-                if (event.repeat) 
-                    return;
-                
-                const key = event.key;
-                const lower = key.toLowerCase();
-
-                if (! helpModal.hidden && key === "Escape") {
-                    event.preventDefault();
-                    closeHelp();
-                    return;
-                }
-
-                if (key === " ") {
-                    event.preventDefault();
-                    togglePlay();
-                    return;
-                }
-
-                if (key === "ArrowRight") {
-                    event.preventDefault();
-                    cursorStep = (cursorStep + 1) % STEPS;
-                    renderGrid();
-                    return;
-                }
-
-                if (key === "ArrowLeft") {
-                    event.preventDefault();
-                    cursorStep = (cursorStep - 1 + STEPS) % STEPS;
-                    renderGrid();
-                    return;
-                }
-
-                if (key === "ArrowDown") {
-                    event.preventDefault();
-                    cursorTrack = (cursorTrack + 1) % TRACKS;
-                    renderGrid();
-                    return;
-                }
-
-                if (key === "ArrowUp") {
-                    event.preventDefault();
-                    cursorTrack = (cursorTrack - 1 + TRACKS) % TRACKS;
-                    renderGrid();
-                    return;
-                }
-
-                if (key === "Enter") {
-                    event.preventDefault();
-                    setCellOn(cursorTrack, cursorStep);
-                    render();
-                    return;
-                }
-
-                if (key === "Backspace" || key === "Delete") {
-                    event.preventDefault();
-                    clearStep(cursorTrack, cursorStep);
-                    return;
-                }
-
-                if (lower === "r") {
-                    event.preventDefault();
-                    randomizeBoard();
-                    return;
-                }
-
-                if (lower === "f") {
-                    event.preventDefault();
-                    fillColumn(cursorStep);
-                    return;
-                }
-
-                if (lower === "g") {
-                    event.preventDefault();
-                    fillRow(cursorTrack);
-                    return;
-                }
-
-                if (lower === "c") {
-                    event.preventDefault();
-                    clearAll();
-                    return;
-                }
-
-                if (lower === "z") {
-                    event.preventDefault();
-                    selectNote(selectedNote - 1);
-                    return;
-                }
-
-                if (lower === "x") {
-                    event.preventDefault();
-                    selectNote(selectedNote + 1);
-                    return;
-                }
-
-                if (key === "-") {
-                    event.preventDefault();
-                    setBpm(bpm - 5);
-                    return;
-                }
-
-                if (key === "=" || key === "+") {
-                    event.preventDefault();
-                    setBpm(bpm + 5);
-                    return;
-                }
-
-                if (key >= "1" && key <= "8") {
-                    event.preventDefault();
-                    selectNote(NOTE_BUTTON_ORDER[Number(key) - 1]);
-                }
-            });
-
-            let gpLastButtons = [];
-
-            function pollGamepad() {
-                const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-                const pad = pads[0];
-                if (! pad) 
-                    return;
-                
-
-                const buttons = pad.buttons.map((button) => button.pressed);
-                const prev = gpLastButtons;
-                gpLastButtons = buttons;
-
-                const pressed = (index) => buttons[index] && ! prev[index];
-
-                if (pressed(2)) 
-                    togglePlay();
-                
-                if (pressed(3)) 
-                    previewCell();
-                
-                if (pressed(0)) {
-                    setCellOn(cursorTrack, cursorStep);
-                    render();
-                }
-                if (pressed(1)) 
-                    clearStep(cursorTrack, cursorStep);
-                
-                if (pressed(12)) {
-                    cursorTrack = (cursorTrack - 1 + TRACKS) % TRACKS;
-                    renderGrid();
-                }
-                if (pressed(13)) {
-                    cursorTrack = (cursorTrack + 1) % TRACKS;
-                    renderGrid();
-                }
-                if (pressed(14)) {
-                    cursorStep = (cursorStep - 1 + STEPS) % STEPS;
-                    renderGrid();
-                }
-                if (pressed(15)) {
-                    cursorStep = (cursorStep + 1) % STEPS;
-                    renderGrid();
-                }
-                if (pressed(4)) 
-                    selectNote(selectedNote - 1);
-                
-                if (pressed(5)) 
-                    selectNote(selectedNote + 1);
-                
-                if (pressed(6)) 
-                    muted[cursorTrack] = ! muted[cursorTrack];
-                
-            }
-
-            buildGrid();
-            buildChannelBar();
-            buildNoteButtons();
-
-            AVAILABLE_INSTRUMENTS.forEach((instrument) => {
-                const option = document.createElement("option");
-                option.value = instrument.key;
-                option.textContent = instrument.label;
-                instrumentSelect.appendChild(option);
-            });
-            const customOption = document.createElement("option");
-            customOption.value = CUSTOM_INSTRUMENT_KEY;
-            customOption.textContent = CUSTOM_INSTRUMENT_LABEL;
-            instrumentSelect.appendChild(customOption);
-
-            commitActiveLayerState();
-            instrumentSelect.value = selectedInstrument;
-            render();
-            ensureInstrumentLoaded(selectedInstrument).catch(() => {});
-            setInterval(pollGamepad, 50);
-        </script>
-    </body>
-</html>
+                                    const STEPS = 8;
+                                    const NOTES = [
+                                        "C",
+                                        "D",
+                                        "E",
+                                        "F",
+                                        "G",
+                                        "A",
+                                        "B",
+                                        "C5"
+                                    ];
+                                    const NOTE_BUTTON_ORDER = [
+                                        7,
+                                        6,
+                                        5,
+                                        4,
+                                        3,
+                                        2,
+                                        1,
+                                        0
+                                    ];
+                                    const DEFAULT_OFF_NOTE = "C";
+                                    const BPM_MIN = 40;
+                                    const BPM_MAX = 300;
+                                    const BPM_TRACK_HEIGHT = 160;
+                                    const BPM_HANDLER_HEIGHT = 29;
+                                    const BPM_HANDLER_TRAVEL = BPM_TRACK_HEIGHT - BPM_HANDLER_HEIGHT;
+                                    const CHANNEL_COUNT = 4;
+                        
+                                    const INSTRUMENTS = [
+                                        {
+                                            key: "oscillator",
+                                            label: "Oscillator",
+                                            file: null,
+                                            font: null
+                                        },
+                                        {
+                                            key: "ocarina",
+                                            label: "Ocarina",
+                                            file: "sounds/ocarina-mp3.js",
+                                            font: "ocarina"
+                                        },
+                                        {
+                                            key: "vibraphone",
+                                            label: "Vibraphone",
+                                            file: "sounds/vibraphone-mp3.js",
+                                            font: "vibraphone"
+                                        }, {
+                                            key: "acoustic_guitar_nylon",
+                                            label: "Nylon Guitar",
+                                            file: "sounds/acoustic_guitar_nylon-mp3.js",
+                                            font: "acoustic_guitar_nylon"
+                                        }, {
+                                            key: "xylophone",
+                                            label: "Xylophone",
+                                            file: "sounds/xylophone-mp3.js",
+                                            font: "xylophone"
+                                        }, {
+                                            key: "synth_drum",
+                                            label: "Synth Drum",
+                                            file: "sounds/synth_drum-mp3.js",
+                                            font: "synth_drum"
+                                        }, {
+                                            key: "banjo",
+                                            label: "Banjo",
+                                            file: "sounds/banjo-mp3.js",
+                                            font: "banjo"
+                                        }, {
+                                            key: "steel_drums",
+                                            label: "Steel Drums",
+                                            file: "sounds/steel_drums-mp3.js",
+                                            font: "steel_drums"
+                                        }, {
+                                            key: "music_box",
+                                            label: "Music Box",
+                                            file: "sounds/music_box-mp3.js",
+                                            font: "music_box"
+                                        }, {
+                                            key: "acoustic_grand_piano",
+                                            label: "Grand Piano",
+                                            file: "sounds/acoustic_grand_piano-mp3.js",
+                                            font: "acoustic_grand_piano"
+                                        }
+                                    ];
+                                    const CUSTOM_INSTRUMENT_KEY = "custom";
+                                    const CUSTOM_INSTRUMENT_LABEL = "Custom";
+                                    const AVAILABLE_INSTRUMENT_FILES = new Set([
+                                        "sounds/acoustic_grand_piano-mp3.js",
+                                        "sounds/acoustic_guitar_nylon-mp3.js",
+                                        "sounds/banjo-mp3.js",
+                                        "sounds/music_box-mp3.js",
+                                        "sounds/ocarina-mp3.js",
+                                        "sounds/synth_drum-mp3.js",
+                                        "sounds/steel_drums-mp3.js",
+                                        "sounds/xylophone-mp3.js",
+                                        "sounds/vibraphone-mp3.js",
+                                    ]);
+                                    const AVAILABLE_INSTRUMENTS = INSTRUMENTS.filter((item) => !item.file || AVAILABLE_INSTRUMENT_FILES.has(item.file));
+                                    const INSTRUMENT_MAP = Object.fromEntries(AVAILABLE_INSTRUMENTS.map((item) => [item.key, item]));
+                                    const customInstrumentMeta = {
+                                        key: CUSTOM_INSTRUMENT_KEY,
+                                        label: CUSTOM_INSTRUMENT_LABEL,
+                                        file: null,
+                                        font: null,
+                                        sourceName: null,
+                                        sourceUrl: null
+                                    };
+                        
+                                    let bpm = 76;
+                                    let playing = false;
+                                    let playStep = 0;
+                                    let playTimer = null;
+                                    let cursorTrack = 0;
+                                    let cursorStep = 0;
+                                    let selectedNote = 7;
+                                    let selectedInstrument = "music_box";
+                                    let activeSoundfont = null;
+                                    let activeScript = null;
+                                    let activeInstrumentKey = "music_box";
+                                    let instrumentLoading = null;
+                                    const loadedInstrumentScripts = new Set();
+                                    const voices = [];
+                                    let ctx = null;
+                                    let knobDrag = null;
+                                    let gridDrag = null;
+                                    let suppressGridClick = false;
+                                    let suppressGridClickTimer = null;
+                                    let activeChannel = 0;
+                                    let allChannelsMode = false;
+                        
+                                    function createEmptyGrid() {
+                                        return Array.from({
+                                            length: TRACKS
+                                        }, () => Array.from({
+                                            length: STEPS
+                                        }, () => ({on: false, note: DEFAULT_OFF_NOTE})));
+                                    }
+                        
+                                    let layers = Array.from({
+                                        length: CHANNEL_COUNT
+                                    }, () => createEmptyGrid());
+                                    let layerInstruments = Array.from({
+                                        length: CHANNEL_COUNT
+                                    }, () => selectedInstrument);
+                                    let layerSelectedNotes = Array.from({
+                                        length: CHANNEL_COUNT
+                                    }, () => selectedNote);
+                                    let grid = layers[activeChannel];
+                                    let muted = Array.from({
+                                        length: TRACKS
+                                    }, () => false);
+                        
+                                    const channelBar = document.getElementById("channelBar");
+                                    const gridArea = document.getElementById("gridArea");
+                                    const noteBar = document.getElementById("noteBar");
+                                    const playQuick = document.getElementById("playQuick");
+                                    const clearQuick = document.getElementById("clearQuick");
+                                    const randomQuick = document.getElementById("randomQuick");
+                                    const bpmKnob = document.getElementById("bpmKnob");
+                                    const instrumentSelect = document.getElementById("instrumentSelect");
+                                    const instrumentReadout = document.getElementById("instrumentReadout");
+                                    const customInstrumentInput = document.getElementById("customInstrumentInput");
+                                    const statusReadout = document.getElementById("statusReadout");
+                                    const playArt = document.querySelector(".play-art");
+                                    const infoQuick = document.getElementById("infoQuick");
+                                    const helpModal = document.getElementById("helpModal");
+                                    const helpClose = document.getElementById("helpClose");
+                                    const tubeGuidePath = document.getElementById("tubeGuidePath");
+                                    const tubeNotePulse = document.getElementById("tubeNotePulse");
+                        
+                                    const channelBtns = [];
+                                    const cellEls = Array.from({
+                                        length: TRACKS
+                                    }, () => Array(STEPS).fill(null));
+                                    const noteBtns = [];
+                        
+                                    function bindPressAnimation(element) {
+                                        if (! element) 
+                                            return;
+                                        
+                                        element.addEventListener("pointerdown", () => {
+                                            element.classList.add("is-pressed");
+                                        });
+                                        element.addEventListener("pointerup", () => {
+                                            element.classList.remove("is-pressed");
+                                        });
+                                        element.addEventListener("pointerleave", () => {
+                                            element.classList.remove("is-pressed");
+                                        });
+                                        element.addEventListener("pointercancel", () => {
+                                            element.classList.remove("is-pressed");
+                                        });
+                                    }
+                        
+                                    function setCellOn(track, step, note = NOTES[selectedNote]) {
+                                        const cell = grid[track][step];
+                                        cell.on = true;
+                                        cell.note = note;
+                                    }
+                        
+                                    function commitActiveLayerInstrument() {
+                                        if (activeChannel >= 0 && activeChannel < layerInstruments.length) {
+                                            layerInstruments[activeChannel] = selectedInstrument;
+                                        }
+                                    }
+                        
+                                    function commitActiveLayerNote() {
+                                        if (activeChannel >= 0 && activeChannel < layerSelectedNotes.length) {
+                                            layerSelectedNotes[activeChannel] = selectedNote;
+                                        }
+                                    }
+                        
+                                    function commitActiveLayerState() {
+                                        commitActiveLayerInstrument();
+                                        commitActiveLayerNote();
+                                    }
+                        
+                                    function selectChannel(index) {
+                                        commitActiveLayerState();
+                                        activeChannel = index;
+                                        allChannelsMode = false;
+                                        grid = layers[activeChannel];
+                                        selectedInstrument = layerInstruments[activeChannel];
+                                        selectedNote = layerSelectedNotes[activeChannel];
+                                        instrumentSelect.value = selectedInstrument;
+                                        renderStatus();
+                                        render();
+                                        ensureInstrumentLoaded(selectedInstrument).catch((error) => {
+                                            console.warn(error);
+                                            selectedInstrument = "oscillator";
+                                            instrumentSelect.value = selectedInstrument;
+                                            renderStatus();
+                                        });
+                                    }
+                        
+                                    function selectAllChannels() {
+                                        commitActiveLayerState();
+                                        allChannelsMode = true;
+                                        render();
+                                    }
+                        
+                                    function getMergedCell(track, step) {
+                                        const activeCells = [];
+                                        for (let layerIndex = 0; layerIndex < layers.length; layerIndex += 1) {
+                                            const cell = layers[layerIndex][track][step];
+                                            if (cell.on) {
+                                                activeCells.push(cell);
+                                            }
+                                        }
+                                        if (! activeCells.length) {
+                                            return {on: false, note: DEFAULT_OFF_NOTE};
+                                        }
+                                        const firstNote = activeCells[0].note;
+                                        const uniform = activeCells.every((cell) => cell.note === firstNote);
+                                        return {
+                                            on: true,
+                                            note: uniform ? firstNote : "+"
+                                        };
+                                    }
+                        
+                                    function getGridCellFromPoint(clientX, clientY) {
+                                        const element = document.elementFromPoint(clientX, clientY);
+                                        const button = element && element.closest ? element.closest(".grid-key") : null;
+                                        if (! button || ! gridArea.contains(button)) 
+                                            return null;
+                                        
+                                        const track = Number(button.dataset.track);
+                                        const step = Number(button.dataset.step);
+                                        if (Number.isNaN(track) || Number.isNaN(step)) 
+                                            return null;
+                                        
+                                        return {
+                                            button,
+                                            track,
+                                            step
+                                        };
+                                    }
+                        
+                                    function fillDraggedCell(track, step) {
+                                        setCellOn(track, step);
+                                        return true;
+                                    }
+                        
+                                    function suppressNextGridClick() {
+                                        suppressGridClick = true;
+                                        if (suppressGridClickTimer) {
+                                            clearTimeout(suppressGridClickTimer);
+                                            suppressGridClickTimer = null;
+                                        }
+                                    }
+                        
+                                    function releaseGridClickBlock() {
+                                        if (suppressGridClickTimer) {
+                                            clearTimeout(suppressGridClickTimer);
+                                        }
+                                        suppressGridClickTimer = setTimeout(() => {
+                                            suppressGridClick = false;
+                                            suppressGridClickTimer = null;
+                                        }, 0);
+                                    }
+                        
+                                    function endGridDrag(pointerId) {
+                                        if (! gridDrag || gridDrag.pointerId !== pointerId) 
+                                            return;
+                                        
+                                        const wasDragging = gridDrag.dragging;
+                                        const startTrack = gridDrag.startTrack;
+                                        const startStep = gridDrag.startStep;
+                                        const startButton = cellEls[startTrack][startStep];
+                                        try {
+                                            startButton.releasePointerCapture(pointerId);
+                                        } catch (error) { // Ignore if capture was already released.
+                                        }
+                                        if (! wasDragging) {
+                                            toggleCell(startTrack, startStep);
+                                        } else {
+                                            releaseGridClickBlock();
+                                        }
+                                        gridDrag = null;
+                                    }
+                        
+                                    function handleGridDragMove(event) {
+                                        if (! gridDrag || gridDrag.pointerId !== event.pointerId) 
+                                            return;
+                                        
+                                        event.preventDefault();
+                                        const deltaX = event.clientX - gridDrag.startX;
+                                        const deltaY = event.clientY - gridDrag.startY;
+                                        if (! gridDrag.dragging && Math.hypot(deltaX, deltaY) < 8) 
+                                            return;
+                                        
+                                        if (! gridDrag.dragging) {
+                                            gridDrag.dragging = true;
+                                            fillDraggedCell(gridDrag.startTrack, gridDrag.startStep);
+                                            render();
+                                        }
+                                        const hit = getGridCellFromPoint(event.clientX, event.clientY);
+                                        if (! hit) 
+                                            return;
+                                        
+                                        if (hit.track === gridDrag.lastTrack && hit.step === gridDrag.lastStep) 
+                                            return;
+                                        
+                                        gridDrag.lastTrack = hit.track;
+                                        gridDrag.lastStep = hit.step;
+                                        fillDraggedCell(hit.track, hit.step);
+                                        render();
+                                        
+                                    }
+                        
+                                    function openHelp() {
+                                        if (! helpModal) 
+                                            return;
+                                        
+                                        helpModal.hidden = false;
+                                    }
+                        
+                                    function closeHelp() {
+                                        if (! helpModal) 
+                                            return;
+                                        
+                                        helpModal.hidden = true;
+                                    }
+                        
+                                    function triggerTubePulse() {
+                                        if (! tubeGuidePath || ! tubeNotePulse || ! tubeNotePulse.parentNode) 
+                                            return;
+                                        
+                        
+                                        const pathLength = tubeGuidePath.getTotalLength();
+                                        const bulb = tubeNotePulse.cloneNode(true);
+                                        bulb.removeAttribute("id");
+                                        tubeNotePulse.parentNode.appendChild(bulb);
+                                        bulb.style.opacity = "1";
+                        
+                                        const originX = 21.5;
+                                        const originY = 106;
+                                        const duration = 900;
+                                        const startTime = performance.now();
+                        
+                                        const animatePulse = (now) => {
+                                            const progress = Math.min((now - startTime) / duration, 1);
+                                            const point = tubeGuidePath.getPointAtLength(progress * pathLength);
+                                            bulb.setAttribute(
+                                                "transform",
+                                                `translate(${
+                                                    point.x - originX
+                                                }, ${
+                                                    point.y - originY
+                                                })`
+                                            );
+                        
+                                            if (progress > 0.8) {
+                                                const fadeProgress = (progress - 0.8) / 0.2;
+                                                bulb.style.opacity = String(1 - fadeProgress);
+                                            }
+                        
+                                            if (progress < 1) {
+                                                requestAnimationFrame(animatePulse);
+                                            } else if (bulb.parentNode) {
+                                                bulb.parentNode.removeChild(bulb);
+                                            }
+                                        };
+                        
+                                        requestAnimationFrame(animatePulse);
+                                    }
+                        
+                                    function getCtx() {
+                                        if (! ctx) 
+                                            ctx = new(window.AudioContext || window.webkitAudioContext)();
+                                        
+                                        if (ctx.state === "suspended") 
+                                            ctx.resume();
+                                        
+                                        return ctx;
+                                    }
+                        
+                                    function playBeep(freq, trackIdx, duration = 0.12) {
+                                        if (muted[trackIdx]) 
+                                            return;
+                                        
+                                        const ac = getCtx();
+                                        const osc = ac.createOscillator();
+                                        const gain = ac.createGain();
+                                        osc.connect(gain);
+                                        gain.connect(ac.destination);
+                                        const waves = ["square", "square", "triangle", "sawtooth"];
+                                        osc.type = waves[trackIdx] || "square";
+                                        osc.frequency.value = freq;
+                                        const now = ac.currentTime;
+                                        gain.gain.setValueAtTime(0.18, now);
+                                        gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+                                        osc.start(now);
+                                        osc.stop(now + duration + 0.01);
+                                    }
+                        
+                                    const NOTE_FREQS = {
+                                        C: 261.63,
+                                        D: 293.66,
+                                        E: 329.63,
+                                        F: 349.23,
+                                        G: 392.0,
+                                        A: 440.0,
+                                        B: 493.88,
+                                        C5: 523.25
+                                    };
+                        
+                                    function getInstrumentMeta(key) {
+                                        if (key === CUSTOM_INSTRUMENT_KEY) {
+                                            return customInstrumentMeta;
+                                        }
+                                        return INSTRUMENT_MAP[key] || INSTRUMENT_MAP.oscillator;
+                                    }
+                        
+                                    function getSampleNote(note) {
+                                        return note === "C5" ? "C5" : `${note}4`;
+                                    }
+                        
+                                    function getInstrumentSource(note, instrumentKey = selectedInstrument) {
+                                        const meta = getInstrumentMeta(instrumentKey);
+                                        const loadedFont = meta.font && window.MIDI && MIDI.Soundfont && MIDI.Soundfont[meta.font];
+                                        const soundfont = meta.key === CUSTOM_INSTRUMENT_KEY
+                                            ? ((window.MIDI && MIDI.Soundfont && MIDI.Soundfont[meta.font]) || activeSoundfont || loadedFont)
+                                            : loadedFont;
+                                        if (instrumentKey === "oscillator" || ! soundfont) 
+                                            return null;
+                                        
+                                        return soundfont[getSampleNote(note)] || soundfont[note] || null;
+                                    }
+                        
+                                    function normalizeSoundfontName(name) {
+                                        return String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+                                    }
+                        
+                                    function getSoundfontNameCandidates(fileName) {
+                                        const baseName = String(fileName || "").replace(/\.[^.]+$/, "");
+                                        const candidates = [
+                                            baseName,
+                                            baseName.replace(/[-_]?mp3$/i, ""),
+                                            baseName.replace(/[-_]?soundfont$/i, "")
+                                        ].filter(Boolean);
+                                        return Array.from(new Set(candidates));
+                                    }
+                        
+                                    function getLoadedSoundfontKeys() {
+                                        return window.MIDI && MIDI.Soundfont ? Object.keys(MIDI.Soundfont) : [];
+                                    }
+                        
+                                    function detectCustomSoundfontKey(beforeKeys, fileName) {
+                                        const soundfonts = window.MIDI && MIDI.Soundfont;
+                                        if (! soundfonts) 
+                                            return null;
+                                        
+                                        const afterKeys = Object.keys(soundfonts);
+                                        const beforeSet = new Set(beforeKeys);
+                                        const addedKeys = afterKeys.filter((key) => ! beforeSet.has(key));
+                                        const candidates = getSoundfontNameCandidates(fileName).map(normalizeSoundfontName);
+                                        const exactMatch = afterKeys.find((key) => candidates.includes(normalizeSoundfontName(key)));
+                                        if (exactMatch) 
+                                            return exactMatch;
+                                        
+                                        const addedCandidate = addedKeys.find((key) => candidates.includes(normalizeSoundfontName(key)));
+                                        if (addedCandidate) 
+                                            return addedCandidate;
+                                        
+                                        const partialMatch = afterKeys.find((key) => candidates.some((candidate) => {
+                                            const normalized = normalizeSoundfontName(key);
+                                            return normalized.includes(candidate) || candidate.includes(normalized);
+                                        }));
+                                        if (partialMatch) 
+                                            return partialMatch;
+                                        
+                                        return addedKeys[0] || afterKeys[0] || null;
+                                    }
+                        
+                                    function setCustomInstrumentLabel(text) {
+                                        const option = Array.from(instrumentSelect.options).find((entry) => entry.value === CUSTOM_INSTRUMENT_KEY);
+                                        if (option) {
+                                            option.textContent = text;
+                                        }
+                                    }
+                        
+                                    function loadCustomInstrumentFile(file) {
+                                        if (! file) {
+                                            return Promise.reject(new Error("No custom instrument file selected"));
+                                        }
+                        
+                                        const fileName = file.name || "custom.js";
+                                        const objectUrl = URL.createObjectURL(file);
+                                        const beforeKeys = getLoadedSoundfontKeys();
+                                        const previousSourceUrl = customInstrumentMeta.sourceUrl;
+                                        const script = document.createElement("script");
+                                        script.src = objectUrl;
+                                        script.async = true;
+                                        script.dataset.instrumentFile = objectUrl;
+                        
+                                        const promise = new Promise((resolve, reject) => {
+                                            const cleanup = () => {
+                                                script.remove();
+                                                try {
+                                                    URL.revokeObjectURL(objectUrl);
+                                                } catch (error) { // Ignore cleanup errors.
+                                                }
+                                            };
+                        
+                                            script.addEventListener("load", () => {
+                                                const soundfontKey = detectCustomSoundfontKey(beforeKeys, fileName);
+                                                const soundfont = soundfontKey && window.MIDI && MIDI.Soundfont && MIDI.Soundfont[soundfontKey];
+                                                if (! soundfont) {
+                                                    cleanup();
+                                                    reject(new Error(`Custom soundfont did not expose a usable MIDI.Soundfont entry for ${fileName}`));
+                                                    return;
+                                                }
+                        
+                                                if (previousSourceUrl && previousSourceUrl !== objectUrl) {
+                                                    try {
+                                                        URL.revokeObjectURL(previousSourceUrl);
+                                                    } catch (error) { // Ignore cleanup errors.
+                                                    }
+                                                }
+                                                customInstrumentMeta.file = fileName;
+                                                customInstrumentMeta.font = soundfontKey;
+                                                customInstrumentMeta.sourceName = fileName;
+                                                customInstrumentMeta.sourceUrl = objectUrl;
+                                                setCustomInstrumentLabel(`Custom: ${
+                                                    soundfontKey || fileName.replace(/\.[^.]+$/, "")
+                                                }`);
+                                                activeSoundfont = soundfont;
+                                                activeScript = objectUrl;
+                                                activeInstrumentKey = CUSTOM_INSTRUMENT_KEY;
+                                                selectedInstrument = CUSTOM_INSTRUMENT_KEY;
+                                                instrumentSelect.value = CUSTOM_INSTRUMENT_KEY;
+                                                cleanup();
+                                                resolve();
+                                            }, {once: true});
+                        
+                                        script.addEventListener("error", () => {
+                                                cleanup();
+                                                reject(new Error(`Failed to load custom instrument file ${fileName}`));
+                                            }, {once: true});
+                                        });
+                                        document.head.appendChild(script);
+                                        return promise;
+                                    }
+                        
+                                    function promptForCustomInstrument() {
+                                        const currentValue = selectedInstrument;
+                                        if (customInstrumentInput) {
+                                            customInstrumentInput.value = "";
+                                            customInstrumentInput.click();
+                                        }
+                                        if (currentValue !== CUSTOM_INSTRUMENT_KEY) {
+                                            instrumentSelect.value = currentValue;
+                                        }
+                                    }
+                        
+                                    function stopPreviewAudio() {
+                                        while (voices.length) {
+                                            const voice = voices.pop();
+                                            try {
+                                                voice.pause();
+                                                voice.currentTime = 0;
+                                            } catch (error) { // Ignore playback cleanup errors.
+                                            }
+                                        }
+                                    }
+                        
+                                    function primeInstrumentAudio() {
+                                        const source = getInstrumentSource("C5");
+                                        if (! source) 
+                                            return;
+                                        
+                                        const audio = new Audio(source);
+                                        audio.volume = 0;
+                                        audio.play().then(() => {
+                                            audio.pause();
+                                            audio.currentTime = 0;
+                                        }).catch(() => {});
+                                    }
+                        
+                                    function ensureInstrumentLoaded(key) {
+                                        if (key === CUSTOM_INSTRUMENT_KEY) {
+                                            if (customInstrumentMeta.font && activeSoundfont && activeInstrumentKey === CUSTOM_INSTRUMENT_KEY) {
+                                                return Promise.resolve();
+                                            }
+                                            if (customInstrumentMeta.font && window.MIDI && MIDI.Soundfont && MIDI.Soundfont[customInstrumentMeta.font]) {
+                                                activeSoundfont = MIDI.Soundfont[customInstrumentMeta.font];
+                                                activeScript = customInstrumentMeta.sourceUrl;
+                                                activeInstrumentKey = CUSTOM_INSTRUMENT_KEY;
+                                                return Promise.resolve();
+                                            }
+                                            return Promise.reject(new Error("No custom soundfont has been loaded"));
+                                        }
+                                        const meta = getInstrumentMeta(key);
+                                        if (! meta.file) {
+                                            activeSoundfont = null;
+                                            activeScript = null;
+                                            activeInstrumentKey = "oscillator";
+                                            return Promise.resolve();
+                                        }
+                        
+                                        const loadedFont = window.MIDI && MIDI.Soundfont && MIDI.Soundfont[meta.font];
+                                        if (loadedFont) {
+                                            activeSoundfont = loadedFont;
+                                            activeScript = meta.file;
+                                            activeInstrumentKey = key;
+                                            return Promise.resolve();
+                                        }
+                        
+                                        if (activeScript === meta.file && activeSoundfont) {
+                                            return Promise.resolve();
+                                        }
+                        
+                                        if (instrumentLoading && instrumentLoading.key === key) {
+                                            return instrumentLoading.promise;
+                                        }
+                        
+                                        const promise = new Promise((resolve, reject) => {
+                                            const resolveFont = () => {
+                                                const font = window.MIDI && window.MIDI.Soundfont && window.MIDI.Soundfont[meta.font];
+                                                if (! font) {
+                                                    reject(new Error(`Soundfont ${
+                                                        meta.font
+                                                    } did not load`));
+                                                    return;
+                                                }
+                                                activeSoundfont = font;
+                                                activeScript = meta.file;
+                                                activeInstrumentKey = key;
+                                                resolve();
+                                            };
+                        
+                                            if (loadedInstrumentScripts.has(meta.file)) {
+                                                resolveFont();
+                                                return;
+                                            }
+                        
+                                            const existing = document.querySelector(`script[data-instrument-file="${
+                                                meta.file
+                                            }"]`);
+                                            if (existing) {
+                                                existing.addEventListener("load", resolveFont, {once: true});
+                                                existing.addEventListener("error", () => reject(new Error(`Failed to load ${
+                                                    meta.file
+                                                }`)), {once: true});
+                                                return;
+                                            }
+                        
+                                            const script = document.createElement("script");
+                                            script.src = meta.file;
+                                            script.async = true;
+                                            script.dataset.instrumentFile = meta.file;
+                                            script.addEventListener("load", () => {
+                                                loadedInstrumentScripts.add(meta.file);
+                                                resolveFont();
+                                            }, {once: true});
+                                            script.addEventListener("error", () => reject(new Error(`Failed to load ${
+                                                meta.file
+                                            }`)), {once: true});
+                                            document.head.appendChild(script);
+                                        });
+                        
+                                        instrumentLoading = {
+                                            key,
+                                            promise
+                                        };
+                                        return promise. finally(() => {
+                                            if (instrumentLoading && instrumentLoading.key === key) {
+                                                instrumentLoading = null;
+                                            }
+                                        });
+                                    }
+                        
+                                    function playNote(note, trackIdx, duration = 0.12, instrumentKey = selectedInstrument) {
+                                        if (muted[trackIdx]) 
+                                            return;
+                                        
+                                        triggerTubePulse();
+                                        const source = getInstrumentSource(note, instrumentKey);
+                                        if (source) {
+                                            const audio = new Audio(source);
+                                            audio.volume = 0.6;
+                                            voices.push(audio);
+                                            while (voices.length > 10) {
+                                                const stale = voices.shift();
+                                                try {
+                                                    stale.pause();
+                                                    stale.currentTime = 0;
+                                                } catch (error) { // Ignore playback cleanup errors.
+                                                }
+                                            }
+                                            audio.play().catch(() => {});
+                                            return;
+                                        }
+                                        playBeep(NOTE_FREQS[note] || 261.63, trackIdx, duration);
+                                    }
+                        
+                                    function buildGrid() {
+                                        for (let track = 0; track < TRACKS; track += 1) {
+                                            for (let step = 0; step < STEPS; step += 1) {
+                                                const button = document.createElement("button");
+                                                button.type = "button";
+                                                button.className = "grid-key";
+                                                button.dataset.track = String(track);
+                                                button.dataset.step = String(step);
+                                                button.setAttribute(
+                                                    "aria-label",
+                                                    `Track ${
+                                                        track + 1
+                                                    }, step ${
+                                                        step + 1
+                                                    }`
+                                                );
+                        
+                                                const overlay = document.createElement("div");
+                                                overlay.className = "grid-key-overlay";
+                                                overlay.setAttribute("aria-hidden", "true");
+                        
+                                                const label = document.createElement("span");
+                                                label.className = "grid-key-label";
+                        
+                                                button.appendChild(overlay);
+                                                button.appendChild(label);
+                                                bindPressAnimation(button);
+                                                button.addEventListener("pointerdown", (event) => {
+                                                    if (event.pointerType === "mouse") 
+                                                        return;
+                                                    
+                                                    event.preventDefault();
+                                                    button.setPointerCapture(event.pointerId);
+                                                    suppressNextGridClick();
+                                                    gridDrag = {
+                                                        pointerId: event.pointerId,
+                                                        startX: event.clientX,
+                                                        startY: event.clientY,
+                                                        startTrack: track,
+                                                        startStep: step,
+                                                        lastTrack: track,
+                                                        lastStep: step,
+                                                        dragging: false
+                                                    };
+                                                });
+                                                button.addEventListener("pointermove", handleGridDragMove);
+                                                button.addEventListener("pointerup", (event) => {
+                                                    if (! gridDrag || gridDrag.pointerId !== event.pointerId) 
+                                                        return;
+                                                    
+                                                    endGridDrag(event.pointerId);
+                                                });
+                                                button.addEventListener("pointercancel", (event) => {
+                                                    if (! gridDrag || gridDrag.pointerId !== event.pointerId) 
+                                                        return;
+                                                    
+                                                    try {
+                                                        button.releasePointerCapture(event.pointerId);
+                                                    } catch (error) { // Ignore if capture was already released.
+                                                    }
+                                                    gridDrag = null;
+                                                    releaseGridClickBlock();
+                                                });
+                                                button.addEventListener("click", () => {
+                                                    if (suppressGridClick) {
+                                                        suppressGridClick = false;
+                                                        return;
+                                                    }
+                                                    cursorTrack = track;
+                                                    cursorStep = step;
+                                                    toggleCell(track, step);
+                                                });
+                        
+                                                gridArea.appendChild(button);
+                                                cellEls[track][step] = button;
+                                            }
+                                        }
+                                    }
+                        
+                                    function buildNoteButtons() {
+                                        NOTE_BUTTON_ORDER.forEach((noteIndex, position) => {
+                                            const button = document.createElement("button");
+                                            button.type = "button";
+                                            button.className = "note-key";
+                                            button.setAttribute("aria-label", `Select ${
+                                                NOTES[noteIndex]
+                                            }`);
+                                            const label = document.createElement("span");
+                                            label.className = "note-key-label";
+                                            label.textContent = NOTES[noteIndex];
+                                            button.appendChild(label);
+                                            bindPressAnimation(button);
+                                            button.addEventListener("click", () => selectNote(noteIndex));
+                                            noteBar.appendChild(button);
+                                            noteBtns.push(button);
+                                        });
+                                    }
+                        
+                                    function renderGrid() {
+                                        for (let track = 0; track < TRACKS; track += 1) {
+                                            for (let step = 0; step < STEPS; step += 1) {
+                                                const button = cellEls[track][step];
+                                                const overlay = button.querySelector(".grid-key-overlay");
+                                                const label = button.querySelector(".grid-key-label");
+                                                const cell = allChannelsMode ? getMergedCell(track, step) : grid[track][step];
+                                                button.classList.toggle("on", cell.on);
+                                                button.classList.toggle("playing", playing && step === playStep);
+                                                button.classList.toggle("button-is-playing", playing && step === playStep && cell.on);
+                                                button.classList.toggle("cursor-here", track === cursorTrack && step === cursorStep);
+                        
+                                                if (label) {
+                                                    label.textContent = cell.on ? cell.note : "";
+                                                }
+                                            }
+                                        }
+                                    }
+                        
+                                    function renderNotes() {
+                                        noteBtns.forEach((button, position) => {
+                                            const noteIndex = NOTE_BUTTON_ORDER[position];
+                                            button.classList.toggle("selected", noteIndex === selectedNote);
+                                        });
+                                    }
+                        
+                                    function buildChannelBar() {
+                                        const labels = ["1", "2", "3", "4", "ALL"];
+                                        labels.forEach((labelText, index) => {
+                                            const button = document.createElement("button");
+                                            button.type = "button";
+                                            button.className = "channel-pill";
+                                            button.textContent = labelText;
+                                            button.setAttribute(
+                                                "aria-label",
+                                                index === CHANNEL_COUNT ? "Show all channels" : `Show channel ${index + 1}`
+                                            );
+                                            bindPressAnimation(button);
+                                            button.addEventListener("click", () => {
+                                                if (index === CHANNEL_COUNT) {
+                                                    selectAllChannels();
+                                                    return;
+                                                }
+                                                selectChannel(index);
+                                            });
+                                            channelBar.appendChild(button);
+                                            channelBtns.push(button);
+                                        });
+                                    }
+                        
+                                    function renderStatus() {
+                                        const norm = (bpm - BPM_MIN) / (BPM_MAX - BPM_MIN);
+                                        const clamped = Math.max(0, Math.min(1, norm));
+                                        const handleOffset = BPM_HANDLER_TRAVEL * (1 - clamped);
+                                        bpmKnob.style.setProperty("--rpm-handler-offset", `${handleOffset}px`);
+                                        bpmKnob.style.setProperty("--rpm-fill", String(clamped));
+                                        bpmKnob.setAttribute("aria-valuenow", String(bpm));
+                                        bpmKnob.setAttribute("aria-valuetext", `${bpm} beats per minute`);
+                                        statusReadout.textContent = `${
+                                            playing ? "PLAY" : "STOP"
+                                        }  BPM ${bpm}  NOTE ${
+                                            NOTES[selectedNote]
+                                        }  ${
+                                            allChannelsMode ? "ALL" : `LAYER ${activeChannel + 1}`
+                                        }`;
+                                        instrumentSelect.value = selectedInstrument;
+                                        playQuick.classList.toggle("is-spinning", playing);
+                                        if (playArt) {
+                                            playArt.classList.toggle("is-spinning", playing);
+                                            playArt.classList.toggle("is-playing", playing);
+                                        }
+                                        channelBtns.forEach((button, index) => {
+                                            const isAllButton = index === CHANNEL_COUNT;
+                                            const isActive = isAllButton ? allChannelsMode : ! allChannelsMode && index === activeChannel;
+                                            const isArmed = allChannelsMode && index === activeChannel;
+                                            button.classList.toggle("is-active", isActive);
+                                            button.classList.toggle("is-armed", isArmed);
+                                            button.setAttribute("aria-pressed", String(isActive || isArmed));
+                                        });
+                                        if (instrumentReadout) {
+                                            const selectedOption = instrumentSelect.options[instrumentSelect.selectedIndex];
+                                            instrumentReadout.textContent = selectedOption ? selectedOption.textContent.toUpperCase() : "";
+                                        }
+                                    }
+                        
+                                    function render() {
+                                        renderGrid();
+                                        renderNotes();
+                                        renderStatus();
+                                    }
+                        
+                                    function toggleCell(track, step) {
+                                        const cell = grid[track][step];
+                                        if (cell.on) {
+                                            cell.on = false;
+                                            cell.note = DEFAULT_OFF_NOTE;
+                                        } else {
+                                            cell.on = true;
+                                            cell.note = NOTES[selectedNote];
+                                        } render();
+                                    }
+                        
+                                    function selectNote(index) {
+                                        selectedNote = ((index % NOTES.length) + NOTES.length) % NOTES.length;
+                                        commitActiveLayerNote();
+                                        renderNotes();
+                                        renderStatus();
+                                    }
+                        
+                                    function clearStep(track, step) {
+                                        grid[track][step].on = false;
+                                        grid[track][step].note = DEFAULT_OFF_NOTE;
+                                        render();
+                                    }
+                        
+                                    function clearAll() {
+                                        for (let track = 0; track < TRACKS; track += 1) {
+                                            for (let step = 0; step < STEPS; step += 1) {
+                                                grid[track][step].on = false;
+                                                grid[track][step].note = DEFAULT_OFF_NOTE;
+                                            }
+                                        }
+                                        render();
+                                    }
+                        
+                                    function randomizeBoard() {
+                                        for (let track = 0; track < TRACKS; track += 1) {
+                                            for (let step = 0; step < STEPS; step += 1) {
+                                                grid[track][step].on = Math.random() > 0.65;
+                                                grid[track][step].note = NOTES[Math.floor(Math.random() * NOTES.length)];
+                                            }
+                                        }
+                                        render();
+                                    }
+                        
+                                    function setBpm(nextBpm) {
+                                        bpm = Math.max(BPM_MIN, Math.min(BPM_MAX, Math.round(nextBpm)));
+                                        renderStatus();
+                                    }
+                        
+                                    function fillColumn(step) {
+                                        for (let track = 0; track < TRACKS; track += 1) {
+                                            setCellOn(track, step);
+                                        }
+                                        render();
+                                    }
+                        
+                                    function fillRow(track) {
+                                        for (let step = 0; step < STEPS; step += 1) {
+                                            setCellOn(track, step);
+                                        }
+                                        render();
+                                    }
+                        
+                                    function randomize() {
+                                        for (let track = 0; track < TRACKS; track += 1) {
+                                            for (let step = 0; step < STEPS; step += 1) {
+                                                grid[track][step].on = Math.random() > 0.5;
+                                                grid[track][step].note = NOTES[Math.floor(Math.random() * NOTES.length)];
+                                            }
+                                        }
+                                        render();
+                                    }
+                        
+                                    function stepInterval() {
+                                        return(60 / bpm / 4) * 1000;
+                                    }
+                        
+                                    function startPlay() {
+                                        if (playing) 
+                                            return;
+                                        
+                                        const instrumentKeys = allChannelsMode ? Array.from(new Set(layerInstruments)) : [selectedInstrument];
+                                        Promise.all(instrumentKeys.map((key) => ensureInstrumentLoaded(key))).catch((error) => console.warn(error));
+                                        primeInstrumentAudio();
+                                        playing = true;
+                                        playStep = 0;
+                                        tick();
+                                        renderStatus();
+                                    }
+                        
+                                    function stopPlay() {
+                                        playing = false;
+                                        clearTimeout(playTimer);
+                                        stopPreviewAudio();
+                                        renderGrid();
+                                        renderStatus();
+                                    }
+                        
+                                    function togglePlay() {
+                                        if (playing) {
+                                            stopPlay();
+                                        } else {
+                                            startPlay();
+                                        }
+                                    }
+                        
+                                    function tick() {
+                                        if (! playing) 
+                                            return;
+                                        
+                                        const playbackLayers = allChannelsMode ? layers : [grid];
+                                        for (let layerIndex = 0; layerIndex < playbackLayers.length; layerIndex += 1) {
+                                            const layer = playbackLayers[layerIndex];
+                                            const instrumentKey = allChannelsMode ? layerInstruments[layerIndex] : selectedInstrument;
+                                            for (let track = 0; track < TRACKS; track += 1) {
+                                                const cell = layer[track][playStep];
+                                                if (cell.on) {
+                                                    playNote(cell.note, track, 0.12, instrumentKey);
+                                                }
+                                            }
+                                        }
+                                        renderGrid();
+                                        playStep = (playStep + 1) % STEPS;
+                                        playTimer = setTimeout(tick, stepInterval());
+                                    }
+                        
+                                    function previewCell() {
+                                        const cell = grid[cursorTrack][cursorStep];
+                                        const note = cell.on ? cell.note : NOTES[selectedNote];
+                                        playNote(note, cursorTrack, 0.18, selectedInstrument);
+                                    }
+                        
+                                    instrumentSelect.addEventListener("change", async () => {
+                                        if (instrumentSelect.value === CUSTOM_INSTRUMENT_KEY) {
+                                            promptForCustomInstrument();
+                                            return;
+                                        }
+                        
+                                        selectedInstrument = instrumentSelect.value;
+                                        commitActiveLayerInstrument();
+                                        activeSoundfont = null;
+                                        activeScript = null;
+                                        activeInstrumentKey = "oscillator";
+                                        stopPreviewAudio();
+                                        renderStatus();
+                        
+                                        try {
+                                            await ensureInstrumentLoaded(selectedInstrument);
+                                        } catch (error) {
+                                            console.warn(error);
+                                            selectedInstrument = "oscillator";
+                                            instrumentSelect.value = selectedInstrument;
+                                            activeSoundfont = null;
+                                            activeScript = null;
+                                            activeInstrumentKey = "oscillator";
+                                        }
+                        
+                                        const meta = getInstrumentMeta(selectedInstrument);
+                                        activeSoundfont = meta.font ? (window.MIDI && MIDI.Soundfont && MIDI.Soundfont[meta.font]) || null : null;
+                                        activeInstrumentKey = selectedInstrument;
+                                        primeInstrumentAudio();
+                                        renderStatus();
+                                    });
+                        
+                                    if (customInstrumentInput) {
+                                        customInstrumentInput.addEventListener("change", async () => {
+                                            const file = customInstrumentInput.files && customInstrumentInput.files[0];
+                                            if (! file) {
+                                                return;
+                                            }
+                        
+                                        try {
+                                            await loadCustomInstrumentFile(file);
+                                            commitActiveLayerInstrument();
+                                            stopPreviewAudio();
+                                            renderStatus();
+                                            primeInstrumentAudio();
+                                        } catch (error) {
+                                                console.warn(error);
+                                                instrumentSelect.value = selectedInstrument;
+                                                renderStatus();
+                                            }
+                                        });
+                                    }
+                        
+                                    playQuick.addEventListener("click", togglePlay);
+                                    clearQuick.addEventListener("click", clearAll);
+                                    randomQuick.addEventListener("click", randomizeBoard);
+                                    bindPressAnimation(playQuick);
+                                    bindPressAnimation(clearQuick);
+                                    bindPressAnimation(randomQuick);
+                                    bindPressAnimation(infoQuick);
+                        
+                                    if (infoQuick) {
+                                        infoQuick.addEventListener("click", openHelp);
+                                    }
+                        
+                                    if (helpClose) {
+                                        helpClose.addEventListener("click", closeHelp);
+                                    }
+                        
+                                    if (helpModal) {
+                                        helpModal.addEventListener("click", (event) => {
+                                            if (event.target === helpModal) 
+                                                closeHelp();
+                                            
+                                        });
+                                    }
+                        
+                                    bpmKnob.addEventListener("pointerdown", (event) => {
+                                        event.preventDefault();
+                                        bpmKnob.setPointerCapture(event.pointerId);
+                                        bpmKnob.classList.add("is-pressed", "is-tweaking");
+                                        knobDrag = {
+                                            pointerId: event.pointerId,
+                                            startY: event.clientY,
+                                            startBpm: bpm
+                                        };
+                                    });
+                        
+                                    bpmKnob.addEventListener("pointermove", (event) => {
+                                        if (! knobDrag || knobDrag.pointerId !== event.pointerId) 
+                                            return;
+                                        
+                                        event.preventDefault();
+                                        const delta = knobDrag.startY - event.clientY;
+                                        setBpm(knobDrag.startBpm + (delta * 0.9));
+                                    });
+                        
+                                    bpmKnob.addEventListener("pointerup", (event) => {
+                                        if (! knobDrag || knobDrag.pointerId !== event.pointerId) 
+                                            return;
+                                        
+                                        try {
+                                            bpmKnob.releasePointerCapture(event.pointerId);
+                                        } catch (error) { // Ignore if capture was already released.
+                                        }bpmKnob.classList.remove("is-pressed", "is-tweaking");
+                                        knobDrag = null;
+                                    });
+                        
+                                    bpmKnob.addEventListener("pointercancel", () => {
+                                        try {
+                                            if (knobDrag) 
+                                                bpmKnob.releasePointerCapture(knobDrag.pointerId);
+                                            
+                                        } catch (error) { // Ignore if capture was already released.
+                                        }bpmKnob.classList.remove("is-pressed", "is-tweaking");
+                                        knobDrag = null;
+                                    });
+                        
+                                    bpmKnob.addEventListener("wheel", (event) => {
+                                        event.preventDefault();
+                                        setBpm(bpm + (event.deltaY < 0 ? 2 : -2));
+                                    }, {passive: false});
+                        
+                                    document.addEventListener("keydown", (event) => {
+                                        if (event.repeat) 
+                                            return;
+                                        
+                                        const key = event.key;
+                                        const lower = key.toLowerCase();
+                        
+                                        if (! helpModal.hidden && key === "Escape") {
+                                            event.preventDefault();
+                                            closeHelp();
+                                            return;
+                                        }
+                        
+                                        if (key === " ") {
+                                            event.preventDefault();
+                                            togglePlay();
+                                            return;
+                                        }
+                        
+                                        if (key === "ArrowRight") {
+                                            event.preventDefault();
+                                            cursorStep = (cursorStep + 1) % STEPS;
+                                            renderGrid();
+                                            return;
+                                        }
+                        
+                                        if (key === "ArrowLeft") {
+                                            event.preventDefault();
+                                            cursorStep = (cursorStep - 1 + STEPS) % STEPS;
+                                            renderGrid();
+                                            return;
+                                        }
+                        
+                                        if (key === "ArrowDown") {
+                                            event.preventDefault();
+                                            cursorTrack = (cursorTrack + 1) % TRACKS;
+                                            renderGrid();
+                                            return;
+                                        }
+                        
+                                        if (key === "ArrowUp") {
+                                            event.preventDefault();
+                                            cursorTrack = (cursorTrack - 1 + TRACKS) % TRACKS;
+                                            renderGrid();
+                                            return;
+                                        }
+                        
+                                        if (key === "Enter") {
+                                            event.preventDefault();
+                                            setCellOn(cursorTrack, cursorStep);
+                                            render();
+                                            return;
+                                        }
+                        
+                                        if (key === "Backspace" || key === "Delete") {
+                                            event.preventDefault();
+                                            clearStep(cursorTrack, cursorStep);
+                                            return;
+                                        }
+                        
+                                        if (lower === "r") {
+                                            event.preventDefault();
+                                            randomizeBoard();
+                                            return;
+                                        }
+                        
+                                        if (lower === "f") {
+                                            event.preventDefault();
+                                            fillColumn(cursorStep);
+                                            return;
+                                        }
+                        
+                                        if (lower === "g") {
+                                            event.preventDefault();
+                                            fillRow(cursorTrack);
+                                            return;
+                                        }
+                        
+                                        if (lower === "c") {
+                                            event.preventDefault();
+                                            clearAll();
+                                            return;
+                                        }
+                        
+                                        if (lower === "z") {
+                                            event.preventDefault();
+                                            selectNote(selectedNote - 1);
+                                            return;
+                                        }
+                        
+                                        if (lower === "x") {
+                                            event.preventDefault();
+                                            selectNote(selectedNote + 1);
+                                            return;
+                                        }
+                        
+                                        if (key === "-") {
+                                            event.preventDefault();
+                                            setBpm(bpm - 5);
+                                            return;
+                                        }
+                        
+                                        if (key === "=" || key === "+") {
+                                            event.preventDefault();
+                                            setBpm(bpm + 5);
+                                            return;
+                                        }
+                        
+                                        if (key >= "1" && key <= "8") {
+                                            event.preventDefault();
+                                            selectNote(NOTE_BUTTON_ORDER[Number(key) - 1]);
+                                        }
+                                    });
+                        
+                                    let gpLastButtons = [];
+                        
+                                    function pollGamepad() {
+                                        const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+                                        const pad = pads[0];
+                                        if (! pad) 
+                                            return;
+                                        
+                        
+                                        const buttons = pad.buttons.map((button) => button.pressed);
+                                        const prev = gpLastButtons;
+                                        gpLastButtons = buttons;
+                        
+                                        const pressed = (index) => buttons[index] && ! prev[index];
+                        
+                                        if (pressed(2)) 
+                                            togglePlay();
+                                        
+                                        if (pressed(3)) 
+                                            previewCell();
+                                        
+                                        if (pressed(0)) {
+                                            setCellOn(cursorTrack, cursorStep);
+                                            render();
+                                        }
+                                        if (pressed(1)) 
+                                            clearStep(cursorTrack, cursorStep);
+                                        
+                                        if (pressed(12)) {
+                                            cursorTrack = (cursorTrack - 1 + TRACKS) % TRACKS;
+                                            renderGrid();
+                                        }
+                                        if (pressed(13)) {
+                                            cursorTrack = (cursorTrack + 1) % TRACKS;
+                                            renderGrid();
+                                        }
+                                        if (pressed(14)) {
+                                            cursorStep = (cursorStep - 1 + STEPS) % STEPS;
+                                            renderGrid();
+                                        }
+                                        if (pressed(15)) {
+                                            cursorStep = (cursorStep + 1) % STEPS;
+                                            renderGrid();
+                                        }
+                                        if (pressed(4)) 
+                                            selectNote(selectedNote - 1);
+                                        
+                                        if (pressed(5)) 
+                                            selectNote(selectedNote + 1);
+                                        
+                                        if (pressed(6)) 
+                                            muted[cursorTrack] = ! muted[cursorTrack];
+                                        
+                                    }
+                        
+                                    buildGrid();
+                                    buildChannelBar();
+                                    buildNoteButtons();
+                        
+                                    AVAILABLE_INSTRUMENTS.forEach((instrument) => {
+                                        const option = document.createElement("option");
+                                        option.value = instrument.key;
+                                        option.textContent = instrument.label;
+                                        instrumentSelect.appendChild(option);
+                                    });
+                                    const customOption = document.createElement("option");
+                                    customOption.value = CUSTOM_INSTRUMENT_KEY;
+                                    customOption.textContent = CUSTOM_INSTRUMENT_LABEL;
+                                    instrumentSelect.appendChild(customOption);
+                        
+                                    commitActiveLayerState();
+                                    instrumentSelect.value = selectedInstrument;
+                                    render();
+                                    ensureInstrumentLoaded(selectedInstrument).catch(() => {});
+                                    setInterval(pollGamepad, 50);
+                                </script>
+                            </body>
+                        </html>
